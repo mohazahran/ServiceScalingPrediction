@@ -79,7 +79,8 @@ class useGenericQueue_learn_MMmK(nn.Module):
                     if i == self.K - 1 and j == self.K - 1:
                         #self.Q.weight[i][j].data.clamp_(min = -self.initial_mu, max = -self.initial_mu)
                         if i < self.m:
-                            self.Q[i][j] = -1*(i-2)*self.mu
+                            #self.Q[i][j] = -1*(i-2)*self.mu
+                            self.Q[i][j] = -1*(i)*self.mu
                         else:
                             self.Q[i][j] = -1*(self.m)*self.mu
                             

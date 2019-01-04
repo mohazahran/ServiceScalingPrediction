@@ -21,8 +21,8 @@ class learn_MMmK_bernoulli(nn.Module):
         self.default_K = 5.0
         self.default_mu = 5.0
         
-        self.m_min,   self.m_max = 1.0, 1e10
-        self.K_min,   self.K_max = 5.0, 1e10
+        self.m_min,   self.m_max = 1.0, 1.0
+        self.K_min,   self.K_max = 5.0, 5.0
         self.mu_min, self.mu_max = 5.0, 1e10
         
         self.clampMin = -1e37

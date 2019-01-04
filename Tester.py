@@ -17,6 +17,8 @@ from learn_MMmK_bernoulli import *
 from learn_genericQueue_fromData import *
 from useGenericQueue_learn_MMmK_multipleMus import *
 
+from Learning_Generic_Queue_MMmK import *
+
 class Tester(object):
     '''
     classdocs
@@ -498,11 +500,15 @@ def main():
     #modelName = 'MMmK_model_m0=1.0_K0=5.0_mu0=5.0_msg_model_O'
     #modelName = 'MMmK_model_m0=1.0_K0=5.0_mu0=5.0_mixed_.5_0_.5_model_R'
 
-    modelName = 'genericQueue_fromData_10'
+    modelName = 'generic_MMmK2'
+    #modelName = 'MMmK_model_asd'
     #modelName = 'MMmK_model_asd'
     #modelName = 'MMmK_model_m0=1.0_K0=5.0_mu0=5.0_MSE'
     
     model = torch.load(modelName)
+    print model.mu.data
+
+    #model.mu.data.clamp_(min = 660.3567, max = 660.3567)
     
     direct = '/Users/mohame11/Documents/myFiles/Career/Work/Purdue/PhD_courses/projects/queueing/'
     direct += '/results_24_2018.10.20-13.31.38_client_server/sipp_results/'
