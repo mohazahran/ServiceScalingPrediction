@@ -17,7 +17,9 @@ from learn_MMmK_bernoulli import *
 from learn_genericQueue_fromData import *
 from useGenericQueue_learn_MMmK_multipleMus import *
 
-from Learning_Generic_Queue_MMmK import *
+#from Learning_Generic_Queue_MMmK import *
+#from Learning_Generic_Queue import *
+from Learning_Generic_Queue_final import *
 
 class Tester(object):
     '''
@@ -500,18 +502,25 @@ def main():
     #modelName = 'MMmK_model_m0=1.0_K0=5.0_mu0=5.0_msg_model_O'
     #modelName = 'MMmK_model_m0=1.0_K0=5.0_mu0=5.0_mixed_.5_0_.5_model_R'
 
-    modelName = 'generic_MMmK2'
+    #modelName = 'generic_MMmK2'
+    #modelName = 'generic_MMmK_multiple_mus'
+    #modelName = 'generic_MMmK2_learningSteadyState'
     #modelName = 'MMmK_model_asd'
     #modelName = 'MMmK_model_asd'
     #modelName = 'MMmK_model_m0=1.0_K0=5.0_mu0=5.0_MSE'
-    
+
+    modelName = 'genericQueueModel'
+
+
     model = torch.load(modelName)
+    print model.params
     print model.mu.data
 
     #model.mu.data.clamp_(min = 660.3567, max = 660.3567)
     
     direct = '/Users/mohame11/Documents/myFiles/Career/Work/Purdue/PhD_courses/projects/queueing/'
-    direct += '/results_24_2018.10.20-13.31.38_client_server/sipp_results/'
+    #direct += '/results_24_2018.10.20-13.31.38_client_server/sipp_results/'
+    direct += '/results_INVITE_CORE_1_K_425982_SCALE_60_REMOTE_CPU_2019.01.08-01.56.08/sipp_results/'
     #direct += '/results_CORES_2_K_DEFT_SCALE_43_2018.10.29-18.56.45/sipp_results/'
     #direct += '/results_CORES_3_K_DEFT_SCALE_64_2018.10.29-20.38.11/sipp_results/'
     #direct += '/results_CORES_4_K_DEFT_SCALE_86_2018.10.29-22.19.41/sipp_results/'
@@ -543,7 +552,10 @@ def main():
     #fname = 'sipp_raw_data_UFF_Perdue_01_13_reduced_1.csv'
     #fname = 'sipp_raw_data_UFF_Perdue_04_23_reduced_1.csv'
     #fname = 'sipp_raw_data_UFF_Perdue_02_29_reduced_1.csv'
-    fname = 'sipp_raw_data_UFF_Perdue_04_42_reduced_1.csv'
+
+    #fname = 'sipp_raw_data_UFF_Perdue_04_42_reduced_1.csv'
+
+    fname = 'sipp_data_long_var_rate_0_1836_seconds_1.csv'
     
     
     

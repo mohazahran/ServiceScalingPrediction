@@ -6,7 +6,43 @@ Created on Sep 3, 2018
 import math
 import numpy as np
 from scipy.optimize import *
+import random
 
+
+def M_M_m_K_simulation(la, mu, m, K, steps):
+    x = 0  # current state (#of alive requests)
+    states = [str(x)]
+    #states = []
+    for i in range(steps):
+        my_lambda = la
+        my_mu = mu
+
+        if x == 0:
+            my_mu = 0
+        if x == K:
+            my_lambda = 0
+
+        if x <= m:
+            my_mu = my_mu * x
+        else:
+            my_mu = my_mu * m
+
+        rate = my_lambda + my_mu
+        # rate now is a normalizing const
+        # so that with prob lambda/rate we move to next state
+        # and with prob mu/rate we go back to previous state
+        rnd = random.random()
+        if rnd >= float(my_lambda) / float(rate):
+            x -= 1
+        else:
+            x += 1
+
+        #if x != 0:
+        states.append(str(x))
+        # t += math.log(random.random())/rate
+
+    statesCount = len(set(states))
+    return states
 
 
 def M_M_m_K_getProbAt_k_2(rho, m, K, n):
@@ -261,7 +297,24 @@ def testing():
 
 
 
+def testing_MMmK_simulation():
+    la = 10
+    mu = 12
+    K = 5
+    m = 3
+    steps = 100
+    states = M_M_m_K_simulation(la, mu, m, K, steps)
+    PK_ = states.count(str(K)) / float(len(states))
+
+    #print states
+    print 'est_PK=', PK_
+    print math.exp(M_M_m_K_log(float(la) / float(mu), m, K))
+    print M_M_m_K(float(la) / float(mu), m, K)
+
+
+
 if __name__ == "__main__":
-    testing()
+    testing_MMmK_simulation()
+    #testing()
     #main()
     print('DONE!')

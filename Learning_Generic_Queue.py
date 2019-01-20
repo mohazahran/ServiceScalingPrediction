@@ -243,8 +243,8 @@ def getTrainingData(dir, summaryFile, minDropRate, maxDropRate):
                 failed = float(curr_row['FailedCall(P)'])
                 if failed > the_lambda or the_lambda <= 0:
                     continue
-                #PK = failed/the_lambda
-                PK = failed
+                PK = failed/the_lambda
+                #PK = failed
             except:
                 continue
             train_X.append(Variable(torch.FloatTensor([the_lambda])))
@@ -553,20 +553,20 @@ def run_using_real_data():
     ########################################
     params = {
         'cuda' : False,
-        'K':50,
-        't': min(50, 10),
-        'batchify' : True,
-        'modelName' : 'asd',
+        'K': 8,
+        't': min(8, 10),
+        'batchify' : False,
+        'modelName' : 'generic_MMmK_multiple_mus',
         'dataLossType' : 'NLL', #NLL or  MSE
         'steadyStateLossType' : 'L1', #L1 or L2
         'steadyStateEpsilon' : 10e-6,
         'dataLossWeight' : 1.0,
         'steadyStateWeight' : 0.0,
         'calculatePK' : 'AVG', #MIN, MAX, AVG,
-        'initialMu' : 25.0,
+        'initialMu' : 50.0,
         'optim' : 'Adam',
         'lr' : 0.05,
-        'gradientClip' : 5.0,
+        'gradientClip' : 10.0,
         'gradientClipType' : 2
     }
 

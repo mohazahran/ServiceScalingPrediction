@@ -14,11 +14,12 @@ import copy
 import sys
 import math
 import solver
+import numpy
 
 import matplotlib as mpl
+
 mpl.use('TkAgg')
 import matplotlib.pyplot as plt
-
 
 
 class GenericQueue(nn.Module):
@@ -26,10 +27,15 @@ class GenericQueue(nn.Module):
         super(GenericQueue, self).__init__()
 
         self.params = params
-
         self.K = params['K']
-        self.m = params['m']
-        self.mu = nn.Parameter(torch.FloatTensor([params['initialMu']]), requires_grad=True)
+        if params['modelType'] == 'MMmK':
+            self.m = params['m']
+            self.mu = nn.Parameter(torch.FloatTensor([params['initialMu']]), requires_grad=True)
+
+        elif params['modelType'] == 'multipleMus':
+            self.mu = nn.Parameter(torch.FloatTensor([params['initialMu']] * (self.params['K'] - 1)),
+                                   requires_grad=True)
+
         if params['learningTechnique'] == 'pi' or params['learningTechnique'] == 'hybrid':
             self.pi = nn.Parameter(torch.FloatTensor([[1.0 / self.K] * self.K]), requires_grad=True)
 
@@ -43,68 +49,119 @@ class GenericQueue(nn.Module):
             else:
                 paramsCount += p.shape[0] * p.shape[1]
 
-        print '**************************************************'
-        print 'Number of parameters in the model = ', paramsCount
-        print '**************************************************'
-
+        print
+        '**************************************************'
+        print
+        'Number of parameters in the model = ', paramsCount
+        print
+        '**************************************************'
 
     def form_Q(self, inputLambda):
-        self.Q = torch.zeros((self.K, self.K))
-        for i in range(self.K):
-            for j in range(self.K):
-                if i == 0 and j == 0:
-                    self.Q[i][j] = -inputLambda
-                elif i == j - 1:
-                    self.Q[i][j] = inputLambda
-                elif i - 1 == j:
-                    if i < self.m:
-                        self.Q[i][j] = self.mu * i
-                    else:
-                        self.Q[i][j] = self.mu * self.m
-                elif i == j:
-                    if i == self.K - 1 and j == self.K - 1:
-                        if i < self.m:
-                            self.Q[i][j] = -1 * (i) * self.mu
+        if self.params['modelType'] == 'multipleMus':
+            if self.params['cuda'] == True:
+                self.Q = torch.zeros((self.params['K'], self.params['K'])).cuda()
+            else:
+                self.Q = torch.zeros((self.params['K'], self.params['K']))
+            for i in range(self.params['K']):
+                for j in range(self.params['K']):
+                    if i == 0 and j == 0:
+                        self.Q[i][j] = -inputLambda
+                    elif i == j - 1:
+                        self.Q[i][j] = inputLambda
+                    elif i - 1 == j:
+                        self.Q[i][j] = self.mu[i - 1]
+                    elif i == j:
+                        if i == self.params['K'] - 1 and j == self.params['K'] - 1:
+                            self.Q[i][j] = -1 * self.mu[i - 1]
+
                         else:
-                            self.Q[i][j] = -1 * (self.m) * self.mu
+                            self.Q[i][j] = -1 * (self.mu[i - 1] + inputLambda)
                     else:
+                        self.Q[i][j] = 0.0
+
+        else:
+            self.Q = torch.zeros((self.K, self.K))
+            for i in range(self.K):
+                for j in range(self.K):
+                    if i == 0 and j == 0:
+                        self.Q[i][j] = -inputLambda
+                    elif i == j - 1:
+                        self.Q[i][j] = inputLambda
+                    elif i - 1 == j:
                         if i < self.m:
-                            tmp = -1 * (self.mu * i + inputLambda)
+                            self.Q[i][j] = self.mu * i
                         else:
-                            tmp = -1 * (self.mu * self.m + inputLambda)
-                        self.Q[i][j] = tmp
-                else:
-                    self.Q[i][j] = 0.0
+                            self.Q[i][j] = self.mu * self.m
+                    elif i == j:
+                        if i == self.K - 1 and j == self.K - 1:
+                            if i < self.m:
+                                self.Q[i][j] = -1 * (i) * self.mu
+                            else:
+                                self.Q[i][j] = -1 * (self.m) * self.mu
+                        else:
+                            if i < self.m:
+                                tmp = -1 * (self.mu * i + inputLambda)
+                            else:
+                                tmp = -1 * (self.mu * self.m + inputLambda)
+                            self.Q[i][j] = tmp
+                    else:
+                        self.Q[i][j] = 0.0
+        return self.Q
 
     def form_const_Q(self, inputLambda):
-        self.Q = torch.zeros((self.K, self.K))
-        for i in range(self.K):
-            for j in range(self.K):
-                if i == 0 and j == 0:
-                    self.Q[i][j] = -inputLambda
-                elif i == j - 1:
-                    self.Q[i][j] = inputLambda
-                elif i - 1 == j:
-                    if i < self.m:
-                        self.Q[i][j] = self.mu.item() * i
-                    else:
-                        self.Q[i][j] = self.mu.item() * self.m
-                elif i == j:
-                    if i == self.K - 1 and j == self.K - 1:
-                        if i < self.m:
-                            self.Q[i][j] = -1 * (i) * self.mu.item()
+        if self.params['modelType'] == 'multipleMus':
+            if self.params['cuda'] == True:
+                self.Q = torch.zeros((self.params['K'], self.params['K'])).cuda()
+            else:
+                self.Q = torch.zeros((self.params['K'], self.params['K']))
+            for i in range(self.params['K']):
+                for j in range(self.params['K']):
+                    if i == 0 and j == 0:
+                        self.Q[i][j] = -inputLambda
+                    elif i == j - 1:
+                        self.Q[i][j] = inputLambda
+                    elif i - 1 == j:
+                        self.Q[i][j] = self.mu[i - 1].item()
+                    elif i == j:
+                        if i == self.params['K'] - 1 and j == self.params['K'] - 1:
+                            self.Q[i][j] = -1 * self.mu[i - 1].item()
+
                         else:
-                            self.Q[i][j] = -1 * (self.m) * self.mu.item()
+                            self.Q[i][j] = -1 * (self.mu[i - 1].item() + inputLambda)
                     else:
+                        self.Q[i][j] = 0.0
+
+        else:
+
+            self.Q = torch.zeros((self.K, self.K))
+            for i in range(self.K):
+                for j in range(self.K):
+                    if i == 0 and j == 0:
+                        self.Q[i][j] = -inputLambda
+                    elif i == j - 1:
+                        self.Q[i][j] = inputLambda
+                    elif i - 1 == j:
                         if i < self.m:
-                            tmp = -1 * (self.mu.item() * i + inputLambda)
+                            self.Q[i][j] = self.mu.item() * i
                         else:
-                            tmp = -1 * (self.mu.item() * self.m + inputLambda)
-                        self.Q[i][j] = tmp
-                else:
-                    self.Q[i][j] = 0.0
-    
-    
+                            self.Q[i][j] = self.mu.item() * self.m
+                    elif i == j:
+                        if i == self.K - 1 and j == self.K - 1:
+                            if i < self.m:
+                                self.Q[i][j] = -1 * (i) * self.mu.item()
+                            else:
+                                self.Q[i][j] = -1 * (self.m) * self.mu.item()
+                        else:
+                            if i < self.m:
+                                tmp = -1 * (self.mu.item() * i + inputLambda)
+                            else:
+                                tmp = -1 * (self.mu.item() * self.m + inputLambda)
+                            self.Q[i][j] = tmp
+                    else:
+                        self.Q[i][j] = 0.0
+
+        return self.Q
+
     def form_P(self, inputLambda):
         self.form_Q(inputLambda)
         if self.params['cuda'] == True:
@@ -115,9 +172,9 @@ class GenericQueue(nn.Module):
             I = torch.diag(torch.ones(self.params['K']))
             g = torch.max(I * torch.abs(self.Q))
             P = torch.diag(torch.ones(self.params['K'])) + torch.div(self.Q, g)
-            
+
         return P
-    
+
     def form_const_P(self, inputLambda):
         self.form_const_Q(inputLambda)
         if self.params['cuda'] == True:
@@ -128,7 +185,7 @@ class GenericQueue(nn.Module):
             I = torch.diag(torch.ones(self.params['K']))
             g = torch.max(I * torch.abs(self.Q))
             P = torch.diag(torch.ones(self.params['K'])) + torch.div(self.Q, g)
-            
+
         return P
 
     def zero_out_gradients_for_nonParameters(self):
@@ -142,14 +199,12 @@ class GenericQueue(nn.Module):
 
     def paramClip(self):
         self.mu.data.clamp_(min=1.0, max=1e10)
-        
-
 
     def objective(self, inputLa, dropCount, dropProb):
-        if self.params['learningTechnique'] == 'steps': ###########################
+        if self.params['learningTechnique'] == 'steps':  ###########################
             P = self.form_P(inputLa)
             cnt = 1
-            Pt_1 = torch.mm(P,P)
+            Pt_1 = torch.mm(P, P)
             while True:
                 cnt += 1
                 Pt = torch.mm(Pt_1, Pt_1)
@@ -157,7 +212,7 @@ class GenericQueue(nn.Module):
                 if self.params['steadyStateLossType'] == 'L2':
                     steady_state_loss = F.mse_loss(torch.mm(Pt_1_K, Pt), Pt_1_K)
                 elif self.params['steadyStateLossType'] == 'L1':
-                    steady_state_loss = torch.sum( torch.abs( torch.mm(Pt_1_K, P) - Pt_1_K) )
+                    steady_state_loss = torch.sum(torch.abs(torch.mm(Pt_1_K, P) - Pt_1_K))
 
                 if cnt > self.params['t'] or steady_state_loss < self.params['steadyStateEpsilon']:
                     break
@@ -165,13 +220,13 @@ class GenericQueue(nn.Module):
                 Pt_1 = Pt
 
             if self.params['calculatePK'] == 'AVG':
-                PK = torch.mean(Pt[:,-1])
+                PK = torch.mean(Pt[:, -1])
             elif self.params['calculatePK'] == 'MIN':
-                PK = torch.min(Pt[:,-1])
+                PK = torch.min(Pt[:, -1])
             elif self.params['calculatePK'] == 'MAX':
-                PK = torch.max(Pt[:,-1])
+                PK = torch.max(Pt[:, -1])
 
-            logPK = torch.log(PK)
+
 
         ############################################################
         elif self.params['learningTechnique'] == 'pi':
@@ -191,13 +246,14 @@ class GenericQueue(nn.Module):
                 elif self.params['steadyStateLossType'] == 'L1':
                     steady_state_loss = torch.sum(torch.abs(pi_P - pi_probs))
 
-                if steady_state_loss < self.params['steadyStateEpsilon'] or cnt > self.params['steadyStateIterPerSample']:
+                if steady_state_loss < self.params['steadyStateEpsilon'] or cnt > self.params[
+                    'steadyStateIterPerSample']:
                     break
 
                 steady_state_loss.backward()
                 # steady_state_loss.backward(retain_graph=True)
-                #self.zero_out_gradients_for_nonParameters()
-                #self.mu.grad.fill_(0)
+                # self.zero_out_gradients_for_nonParameters()
+                # self.mu.grad.fill_(0)
                 nn.utils.clip_grad_norm_(self.parameters(), self.params['gradientClip'],
                                          norm_type=self.params['gradientClipType'])
                 self.optimiser.step()
@@ -208,12 +264,12 @@ class GenericQueue(nn.Module):
             Pt = P
             for t in range(self.params['t']):
                 Pt = torch.mm(Pt, Pt)
-            #logPK = F.log_softmax(torch.mm(F.softmax(self.pi, dim=1), Pt), dim=1)[-1][-1]
+            # logPK = F.log_softmax(torch.mm(F.softmax(self.pi, dim=1), Pt), dim=1)[-1][-1]
             PK = torch.mm(F.softmax(self.pi, dim=1), Pt)[-1][-1]
-            logPK = torch.log(PK)
 
 
-        else: #hybrid ###########################################################
+
+        else:  # hybrid ###########################################################
             P = self.form_const_P(inputLa)
             cnt = 1
             Pt_1 = torch.mm(P, P)
@@ -246,10 +302,10 @@ class GenericQueue(nn.Module):
                 Pt = torch.mm(Pt, Pt)
             # logPK = F.log_softmax(torch.mm(F.softmax(self.pi, dim=1), Pt), dim=1)[-1][-1]
             PK = torch.mm(F.softmax(self.pi, dim=1), Pt)[-1][-1]
-            logPK = torch.log(PK)
+
         ############################################################
 
-
+        logPK = torch.log( torch.clamp(PK, min = 1e-10, max = 1.0))
 
         if self.params['dataLossType'] == 'MSE':
             dataLoss = F.mse_loss(PK, torch.FloatTensor([dropProb]))
@@ -260,8 +316,7 @@ class GenericQueue(nn.Module):
 
         return loss, logPK
 
-
-    def predict(self, la, clampNumbers = False):
+    def predict(self, la, clampNumbers=False):
         if self.params['learningTechnique'] == 'steps':  ###########################
             P = self.form_P(la)
             cnt = 1
@@ -291,7 +346,7 @@ class GenericQueue(nn.Module):
             return PK.item()
 
         elif self.params['learningTechnique'] == 'pi':  ###########################
-            
+
             P = self.form_const_P(la)
             Pt = P
             for t in range(self.params['t']):
@@ -308,7 +363,8 @@ class GenericQueue(nn.Module):
                 elif self.params['steadyStateLossType'] == 'L1':
                     steady_state_loss = torch.sum(torch.abs(pi_P - pi_probs))
 
-                if steady_state_loss < self.params['steadyStateEpsilon'] or cnt > self.params['steadyStateIterPerSample']:
+                if steady_state_loss < self.params['steadyStateEpsilon'] or cnt > self.params[
+                    'steadyStateIterPerSample']:
                     break
 
                 steady_state_loss.backward()
@@ -320,15 +376,15 @@ class GenericQueue(nn.Module):
                 self.optimiser.step()
                 self.optimiser.zero_grad()
 
-            #P = self.form_P(inputLambda)
-            #Pt = P
-            #for t in range(self.params['t']):
+            # P = self.form_P(inputLambda)
+            # Pt = P
+            # for t in range(self.params['t']):
             #    Pt = torch.mm(Pt, Pt)
-            
+
             PK = torch.mm(F.softmax(self.pi, dim=1), Pt)[-1][-1]
             return PK.item()
 
-        else: #hybrid ###########################################################
+        else:  # hybrid ###########################################################
             P = self.form_const_P(inputLa)
             cnt = 1
             Pt_1 = torch.mm(P, P)
@@ -349,23 +405,21 @@ class GenericQueue(nn.Module):
                     break
 
 
-
-
 ############################################################################################################
 
 
 def parseDataFile(fpath, inputPacketsCols, droppedPacketsCols):
-    df = pd.read_csv(fpath, usecols = inputPacketsCols+droppedPacketsCols)
-    df.fillna(0, inplace=True) # replace missing values (NaN) to zero9
+    df = pd.read_csv(fpath, usecols=inputPacketsCols + droppedPacketsCols)
+    df.fillna(0, inplace=True)  # replace missing values (NaN) to zero9
     return df
 
 
 def getTrainingData(dir, summaryFile, minDropRate, maxDropRate):
-    sfile = dir+summaryFile
+    sfile = dir + summaryFile
     inputPacketsCols = ['CallRate(P)']
     droppedPacketsCols = ['FailedCall(P)']
 
-    df = pd.read_csv(sfile, usecols = ['Rate File', ' Failed Calls'])
+    df = pd.read_csv(sfile, usecols=['Rate File', ' Failed Calls'])
     df.fillna(0, inplace=True)
     train_X = []
     train_Y = []
@@ -373,18 +427,20 @@ def getTrainingData(dir, summaryFile, minDropRate, maxDropRate):
         if row[' Failed Calls'] < minDropRate or row[' Failed Calls'] > maxDropRate:
             continue
         fname = 'sipp_data_' + row['Rate File'] + '_1.csv'
-        simulationFile = dir + fname #sipp_data_UFF_Perdue_01_1_reduced_1.csv     UFF_Perdue_01_12_reduced
+        if fname == 'sipp_data_long_var_rate_0_1836_seconds_1.csv':
+            continue
+        simulationFile = dir + fname  # sipp_data_UFF_Perdue_01_1_reduced_1.csv     UFF_Perdue_01_12_reduced
 
-        curr_df = pd.read_csv(simulationFile, usecols = inputPacketsCols+droppedPacketsCols)
-        curr_df.fillna(0, inplace=True) # replace missing values (NaN) to zero9
+        curr_df = pd.read_csv(simulationFile, usecols=inputPacketsCols + droppedPacketsCols)
+        curr_df.fillna(0, inplace=True)  # replace missing values (NaN) to zero9
         for j, curr_row in curr_df.iterrows():
             try:
                 the_lambda = float(curr_row['CallRate(P)'])
                 failed = float(curr_row['FailedCall(P)'])
                 if failed > the_lambda or the_lambda <= 0:
                     continue
-                PK = failed/the_lambda
-                #PK = failed
+                PK = failed / the_lambda
+                # PK = failed
             except:
                 continue
             train_X.append(Variable(torch.FloatTensor([the_lambda])))
@@ -393,17 +449,16 @@ def getTrainingData(dir, summaryFile, minDropRate, maxDropRate):
     return train_X, train_Y
 
 
-
-
-def evaluate_given_model(testModel, testLambdas, testPKs, plotFig = True):
+def evaluate_given_model(testModel, testLambdas, testPKs, plotFig=True):
     testModel.eval()
-    print testModel.mu
+    print
+    testModel.mu
     est_PKs = []
     avg_NLL = 0.0
 
     for i in range(len(testLambdas)):
         est_PK = testModel.predict(testLambdas[i])
-        logPK = math.log(est_PK)
+        logPK = math.log(numpy.clip(est_PK, 1e-10, 1.0))
         est_PKs.append(est_PK)
         actualDrops = testPKs[i] * testLambdas[i]
         NLL = - (actualDrops * logPK + (testLambdas[i] - actualDrops) * math.log(1 - math.exp(logPK)))
@@ -418,21 +473,22 @@ def evaluate_given_model(testModel, testLambdas, testPKs, plotFig = True):
 
     MSE = F.mse_loss(est_PK_torch, testPKs_torch)
     avg_NLL = avg_NLL / float(len(testLambdas))
-    print 'Evaluation MSE=', MSE.item(), 'NLL=', avg_NLL
+    print
+    'Evaluation MSE=', MSE.item(), 'NLL=', avg_NLL
 
     if plotFig:
         fig = plt.figure(1, figsize=(6, 4))
         axes = plt.gca()
         ax = plt.axes()
 
-        #drawing est PK vs. emp PK
+        # drawing est PK vs. emp PK
         plt.ylabel('Probability')
         plt.xlabel('Lambda')
-        lines = plt.plot(testLambdas, est_PKs, '--r' ,label='Estimated PK')
+        lines = plt.plot(testLambdas, est_PKs, '--r', label='Estimated PK')
         plt.setp(lines, linewidth=2.0)
-        lines = plt.plot(testLambdas, testPKs, 'b' ,label='True PK')
+        lines = plt.plot(testLambdas, testPKs, 'b', label='True PK')
         plt.setp(lines, linewidth=2.0)
-        plt.legend(loc = 2, prop={'size':17}, labelspacing=0.1)
+        plt.legend(loc=2, prop={'size': 17}, labelspacing=0.1)
         fig.suptitle('Estimated PK Vs. True PK', fontsize=12, fontweight='bold', horizontalalignment='center', y=.86)
         plt.grid()
         plt.show()
@@ -441,18 +497,15 @@ def evaluate_given_model(testModel, testLambdas, testPKs, plotFig = True):
     return MSE.item(), avg_NLL
 
 
-
-
-def train(model = None,
-          inputLambdas = [], PKs = [],
+def train(model=None,
+          inputLambdas=[], PKs=[],
           batchSize=10,
-          epochs = 150,
-          validLambdas = [], validPKs = [],
-          modelName = 'abc',
-          shuffleData = True,
-          showBatches = False
+          epochs=150,
+          validLambdas=[], validPKs=[],
+          modelName='abc',
+          shuffleData=True,
+          showBatches=False
           ):
-
     model.train()
     bestValidLoss = 1e10
     bestModel = model
@@ -472,10 +525,10 @@ def train(model = None,
 
     total_loss = 0.0
     for e in range(epochs):
-        #shuffle training data
+        # shuffle training data
         if shuffleData:
             rows = len(inputLambdas)
-            idxs = list(range(0,rows))
+            idxs = list(range(0, rows))
             random.shuffle(idxs)
             idxs = torch.LongTensor(idxs)
             train_X = inputLambdas[idxs]
@@ -495,19 +548,21 @@ def train(model = None,
             est_PKs.append(torch.exp(logPK).item())
             true_PKs.append(PKs[b])
 
-            print (est_PKs[-1], true_PKs[-1].item()),
+            #print(est_PKs[-1], true_PKs[-1].item()),
 
             total_loss = total_loss + loss
             epochLoss += loss.item()
 
-            if (b+1) % batchSize == 0:
+            if (b + 1) % batchSize == 0:
                 total_loss = total_loss / float(batchSize)
                 total_loss.backward()
-                nn.utils.clip_grad_norm_(model.parameters(), model.params['gradientClip'], norm_type=model.params['gradientClipType'])
+                nn.utils.clip_grad_norm_(model.parameters(), model.params['gradientClip'],
+                                         norm_type=model.params['gradientClipType'])
                 model.optimiser.step()
                 model.optimiser.zero_grad()
+                model.paramClip()
                 if showBatches:
-                    print '\nbatch#',b ,'loss=',total_loss.item(), 'mu=', model.mu.data
+                    print '\nbatch#', b, 'loss=', total_loss.item(), 'mu=', model.mu.data
                 total_loss = 0.0
 
         total_loss = 0.0
@@ -515,7 +570,7 @@ def train(model = None,
         true_PKs = torch.FloatTensor(true_PKs)
         MSE = F.mse_loss(est_PKs, true_PKs)
 
-        validMSE, validNLL = evaluate_given_model(model, validLambdas, validPKs, plotFig = False)
+        validMSE, validNLL = evaluate_given_model(model, validLambdas, validPKs, plotFig=False)
         if model.params['dataLossType'] == 'MSE':
             validLoss = validMSE
         elif model.params['dataLossType'] == 'NLL':
@@ -526,20 +581,15 @@ def train(model = None,
             torch.save(model, modelName)
             bestModel = torch.load(modelName)
 
-        print 'epoch=', e , 'lr=', model.params['lr'], 'mu=',model.mu.data
-        print 'TrainLoss= ', epochLoss/float(len(inputLambdas))
+        print 'epoch=', e, 'lr=', model.params['lr'], 'mu=', model.mu.data
+        print 'TrainLoss= ', epochLoss / float(len(inputLambdas))
         print 'MSE=', MSE.item()
         print 'validLoss=', validLoss
         print '\tbest validLoss=', bestValidLoss
-        #print '\tbest mu=',bestModel.mu.data
+        # print '\tbest mu=',bestModel.mu.data
         print
 
         torch.save(bestModel, modelName)
-
-
-
-
-
 
 
 def run_using_MMmK_simulation():
@@ -551,37 +601,39 @@ def run_using_MMmK_simulation():
     maxLambda = 1000
     inputDataSize = 1
 
-    train_X = list(range(1,maxLambda,10))
-    #train_X = list(range(10, 1000, 2))
+    train_X = list(range(1, maxLambda, 10))
+    # train_X = list(range(10, 1000, 2))
     random.shuffle(train_X)
-    #train_X = train_X[:inputDataSize]
-    train_X = [600]
+    # train_X = train_X[:inputDataSize]
+    train_X = [75]
 
-    train_Y = [ math.exp(solver.M_M_m_K_log(float(inp)/float(true_mu), true_m, true_K) )  for inp in train_X ]
+    train_Y = [math.exp(solver.M_M_m_K_log(float(inp) / float(true_mu), true_m, true_K)) for inp in train_X]
 
-    drops = [math.ceil(train_X[i]*train_Y[i])  for i in range(len(train_X))]
+    drops = [math.ceil(train_X[i] * train_Y[i]) for i in range(len(train_X))]
 
-    print '#drops=', drops
+    print
+    '#drops=', drops
 
-    valid_X = list(range(1,maxLambda,7))
-    #valid_X = list(range(5, 1000, 7))
+    valid_X = list(range(1, maxLambda, 7))
+    # valid_X = list(range(5, 1000, 7))
     random.shuffle(valid_X)
-    valid_X = [600]
+    valid_X = [75]
     valid_X = valid_X[:inputDataSize]
-    valid_Y = [ math.exp(solver.M_M_m_K_log(float(inp)/float(true_mu), true_m, true_K) )  for inp in valid_X ]
+    valid_Y = [math.exp(solver.M_M_m_K_log(float(inp) / float(true_mu), true_m, true_K)) for inp in valid_X]
 
     ########################################
     params = {
         'cuda': False,
-        'K': 5,
         'm': 3,
-        'initialMu': 25.0,
-        'learningTechnique': 'pi', #'steps', 'pi', 'hybrid'
+        'K': 5,
+        'initialMu': 100.0,
+        'modelType': 'multipleMus',  # 'MMmK', 'multipleMus'
+        'learningTechnique': 'steps',  # 'steps', 'pi', 'hybrid'
         'steadyStateIterPerSample': 1000,
         'modelName': 'generic_MMmK2_learningSteadyState',
         'dataLossType': 'NLL',  # NLL or  MSE
         'steadyStateLossType': 'L1',  # L1 or L2
-        't': 0,
+        't': 100,
         'steadyStateEpsilon': 1e-4,
         'dataLossWeight': 1.0,
         'steadyStateWeight': 0.0,
@@ -596,15 +648,14 @@ def run_using_MMmK_simulation():
     'Parameters:\n', params
 
     if torch.cuda.is_available():
-        print 'torch.cuda.is_available() = ', torch.cuda.is_available()
-
+        print
+        'torch.cuda.is_available() = ', torch.cuda.is_available()
 
     random.seed(1111)
     if params['cuda'] == True:
         torch.cuda.manual_seed(1111)
     else:
         torch.manual_seed(1111)
-
 
     model = GenericQueue(params)
 
@@ -613,88 +664,79 @@ def run_using_MMmK_simulation():
     else:
         torch.set_num_threads(8)
 
-
-
-    train(model = model,
-          inputLambdas = train_X, PKs = train_Y,
-          batchSize = 1,
-          epochs = 1500,
-          validLambdas = valid_X, validPKs = valid_Y,
-          modelName = params['modelName'],
-          shuffleData = True,
-          showBatches = True
+    train(model=model,
+          inputLambdas=train_X, PKs=train_Y,
+          batchSize=1,
+          epochs=3000,
+          validLambdas=valid_X, validPKs=valid_Y,
+          modelName=params['modelName'],
+          shuffleData=True,
+          showBatches=True
           )
 
-
-
-    testLambdas = list(range(1,maxLambda,1))
-    #testLambdas = list(range(15, 1000, 10))
-    testPKs = [ math.exp(solver.M_M_m_K_log(float(inp)/float(true_mu), true_m, true_K) )  for inp in testLambdas ]
+    testLambdas = list(range(1, maxLambda, 1))
+    # testLambdas = list(range(15, 1000, 10))
+    testPKs = [math.exp(solver.M_M_m_K_log(float(inp) / float(true_mu), true_m, true_K)) for inp in testLambdas]
     evaluate_given_model(model, testLambdas, testPKs)
-
-
-
-
-
-
 
 
 def run_using_real_data():
     random.seed(1111)
 
-    dir = '/Users/mohame11/Documents/myFiles/Career/Work/Purdue/PhD_courses/projects/queueing/results_24_2018.10.20-13.31.38_client_server/sipp_results/'
-    #dir = '/Users/mohame11/Documents/myFiles/Career/Work/Purdue/PhD_courses/projects/queueing/results_CORES_4_K_DEFT_SCALE_86_2018.10.29-22.19.41/sipp_results/'
-    #dir = '/Users/mohame11/Documents/myFiles/Career/Work/Purdue/PhD_courses/projects/queueing/results_CORES_2_K_100000_SCALE_43_2018.11.03-13.38.21/sipp_results/'
+    #dir = '/Users/mohame11/Documents/myFiles/Career/Work/Purdue/PhD_courses/projects/queueing/results_24_2018.10.20-13.31.38_client_server/sipp_results/'
+    dir = '/Users/mohame11/Documents/myFiles/Career/Work/Purdue/PhD_courses/projects/queueing/results_INVITE_CORE_1_K_425982_SCALE_60_REMOTE_CPU_2019.01.08-01.56.08/sipp_results/'
+    # dir = '/Users/mohame11/Documents/myFiles/Career/Work/Purdue/PhD_courses/projects/queueing/results_CORES_4_K_DEFT_SCALE_86_2018.10.29-22.19.41/sipp_results/'
+    # dir = '/Users/mohame11/Documents/myFiles/Career/Work/Purdue/PhD_courses/projects/queueing/results_CORES_2_K_100000_SCALE_43_2018.11.03-13.38.21/sipp_results/'
 
+    # dir = '/Users/mohame11/Documents/myFiles/Career/Work/Purdue/PhD_courses/projects/queueing/Traffic-Types/Mixed/results_ALL_.4+.5_CORE_1_K_425982_SCALE_24_2018.11.23-18.47.32/sipp_results/'
 
-    #dir = '/Users/mohame11/Documents/myFiles/Career/Work/Purdue/PhD_courses/projects/queueing/Traffic-Types/Mixed/results_ALL_.4+.5_CORE_1_K_425982_SCALE_24_2018.11.23-18.47.32/sipp_results/'
+    # dir = '/Users/mohame11/Documents/myFiles/Career/Work/Purdue/PhD_courses/projects/queueing/Traffic-Types/results_INVITE_CORE_1_K_425982_SCALE_17_2018.11.21-02.49.02/sipp_results/'
 
-    #dir = '/Users/mohame11/Documents/myFiles/Career/Work/Purdue/PhD_courses/projects/queueing/Traffic-Types/results_INVITE_CORE_1_K_425982_SCALE_17_2018.11.21-02.49.02/sipp_results/'
+    # dir = '/Users/mohame11/Documents/myFiles/Career/Work/Purdue/PhD_courses/projects/queueing/Traffic-Types/results_MSG_CORE_1_K_425982_SCALE_80_2018.11.21-04.56.39/sipp_results/'
 
-    #dir = '/Users/mohame11/Documents/myFiles/Career/Work/Purdue/PhD_courses/projects/queueing/Traffic-Types/results_MSG_CORE_1_K_425982_SCALE_80_2018.11.21-04.56.39/sipp_results/'
+    # dir = '/Users/mohame11/Documents/myFiles/Career/Work/Purdue/PhD_courses/projects/queueing/Traffic-Types/results_SUBSCRIBE_CORE_1_K_425982_SCALE_36_2018.11.21-07.04.10/sipp_results/'
 
-    #dir = '/Users/mohame11/Documents/myFiles/Career/Work/Purdue/PhD_courses/projects/queueing/Traffic-Types/results_SUBSCRIBE_CORE_1_K_425982_SCALE_36_2018.11.21-07.04.10/sipp_results/'
-
-    #dir = '/Users/mohame11/Documents/myFiles/Career/Work/Purdue/PhD_courses/projects/queueing/Traffic-Types/Mixed/results_ALL_.5+0_CORE_1_K_425982_SCALE_30_2018.11.23-20.55.11/sipp_results/'
+    # dir = '/Users/mohame11/Documents/myFiles/Career/Work/Purdue/PhD_courses/projects/queueing/Traffic-Types/Mixed/results_ALL_.5+0_CORE_1_K_425982_SCALE_30_2018.11.23-20.55.11/sipp_results/'
 
     summaryFile = 'summary_data_dump.csv'
 
     trainQuota = 0.85
     validQuota = 0.15
 
-    data_X, data_Y = getTrainingData(dir, summaryFile, minDropRate=1, maxDropRate=10)
+    data_X, data_Y = getTrainingData(dir, summaryFile, minDropRate=1, maxDropRate=1e10)
 
-    #shuffle data
+    # shuffle data
     combined = list(zip(data_X, data_Y))
     random.shuffle(combined)
     data_X[:], data_Y[:] = zip(*combined)
 
-    trainLen = int(trainQuota*len(data_X))
-    validLen = int(validQuota*len(data_X))
+    trainLen = int(trainQuota * len(data_X))
+    validLen = int(validQuota * len(data_X))
 
     print 'trainLen=', trainLen, 'validLen=', validLen
 
     train_X = data_X[:trainLen]
     train_Y = data_Y[:trainLen]
 
-    valid_X = data_X[trainLen:trainLen+validLen]
-    valid_Y = data_Y[trainLen:trainLen+validLen]
+    valid_X = data_X[trainLen:trainLen + validLen]
+    valid_Y = data_Y[trainLen:trainLen + validLen]
 
-    test_X = data_X[trainLen+validLen:]
-    test_Y = data_Y[trainLen+validLen:]
+    test_X = data_X[trainLen + validLen:]
+    test_Y = data_Y[trainLen + validLen:]
 
     ########################################
     params = {
         'cuda': False,
-        'K': 8,
-        'm': 9,
-        'initialMu': 200.0,
-        'learningTechnique': 'pi',  # 'steps', 'pi', 'hybrid'
+        'K': 10,
+        'm': 9, # no effect when 'modelType': 'multipleMus'
+        'initialMu': 500.0,
+        'modelType': 'multipleMus', #'MMmK', 'multipleMus'
+        'learningTechnique': 'steps',  # 'steps', 'pi', 'hybrid'
         'steadyStateIterPerSample': 1000,
-        'modelName': 'generic_MMmK2_learningSteadyState',
+        'modelName': 'genericQueueModel_K10',
         'dataLossType': 'NLL',  # NLL or  MSE
         'steadyStateLossType': 'L1',  # L1 or L2
-        't': 0,
+        't': 1000,
         'steadyStateEpsilon': 1e-4,
         'dataLossWeight': 1.0,
         'steadyStateWeight': 0.0,
@@ -705,22 +747,21 @@ def run_using_real_data():
         'gradientClipType': 2
     }
 
-    print 'Parameters:\n', params
+    print
+    'Parameters:\n', params
 
-    #print torch.__version__
+    # print torch.__version__
 
-    #print torch.version.cuda
+    # print torch.version.cuda
 
     if torch.cuda.is_available():
-        print 'torch.cuda.is_available() = ', torch.cuda.is_available()
-
-
+        print
+        'torch.cuda.is_available() = ', torch.cuda.is_available()
 
     if params['cuda'] == True:
         torch.cuda.manual_seed(1111)
     else:
         torch.manual_seed(1111)
-
 
     model = GenericQueue(params)
 
@@ -729,18 +770,15 @@ def run_using_real_data():
     else:
         torch.set_num_threads(8)
 
-
-
-    train(model = model,
-          inputLambdas = train_X, PKs = train_Y,
-          batchSize = 32,
-          epochs = 100,
-          validLambdas = valid_X, validPKs = valid_Y,
-          modelName = params['modelName'],
-          shuffleData = True,
-          showBatches = True
+    train(model=model,
+          inputLambdas=train_X, PKs=train_Y,
+          batchSize=32,
+          epochs=1000,
+          validLambdas=valid_X, validPKs=valid_Y,
+          modelName=params['modelName'],
+          shuffleData=True,
+          showBatches=False
           )
-
 
 
 def test():
@@ -766,15 +804,16 @@ def test():
         'gradientClipType': 2
     }
     model = GenericQueue(params)
-    #testLambdas = list(range(15,1000,10))
+    # testLambdas = list(range(15,1000,10))
     testLambdas = [500]
-    #testPKs = [ solver.M_M_m_K_getProbAt_k(float(inp)/float(true_mu), true_m, true_K, true_K) for inp in testLambdas ]
-    testPKs = [ math.exp(solver.M_M_m_K_log(float(inp)/float(true_mu), true_m, true_K) )  for inp in testLambdas ]
+    # testPKs = [ solver.M_M_m_K_getProbAt_k(float(inp)/float(true_mu), true_m, true_K, true_K) for inp in testLambdas ]
+    testPKs = [math.exp(solver.M_M_m_K_log(float(inp) / float(true_mu), true_m, true_K)) for inp in testLambdas]
 
     evaluate_given_model(model, testLambdas, testPKs)
 
+
 if __name__ == "__main__":
-    #test()
+    # test()
     #run_using_MMmK_simulation()
     run_using_real_data()
     print('DONE!')
