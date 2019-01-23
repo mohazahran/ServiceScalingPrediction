@@ -32,9 +32,15 @@ class GenericQueue(nn.Module):
             self.m = params['m']
             self.mu = nn.Parameter(torch.FloatTensor([params['initialMu']]), requires_grad=True)
 
-        elif params['modelType'] == 'multipleMus':
-            self.mu = nn.Parameter(torch.FloatTensor([params['initialMu']] * (self.params['K'] - 1)),
-                                   requires_grad=True)
+        elif params['modelType'] == 'multipleMus': # MMmK with different mu per state
+            #self.mu = nn.Parameter(torch.FloatTensor([params['initialMu']] * (self.params['K'] - 1)), requires_grad=True)
+            mus = [params['initialMu']*(i+1) for i in range(self.params['K'] - 1)]
+            self.mu = nn.Parameter(torch.FloatTensor(mus), requires_grad=True)
+
+        elif params['modelType'] == 'allMus': # each state has a different mu for all previous states
+            self.mu = nn.ParameterDict()
+            for i in range(1, self.params['K']):
+                self.mu[str(i)] = nn.Parameter(torch.FloatTensor([params['initialMu']] * i), requires_grad=True)
 
         if params['learningTechnique'] == 'pi' or params['learningTechnique'] == 'hybrid':
             self.pi = nn.Parameter(torch.FloatTensor([[1.0 / self.K] * self.K]), requires_grad=True)
@@ -49,12 +55,9 @@ class GenericQueue(nn.Module):
             else:
                 paramsCount += p.shape[0] * p.shape[1]
 
-        print
-        '**************************************************'
-        print
-        'Number of parameters in the model = ', paramsCount
-        print
-        '**************************************************'
+        print '**************************************************'
+        print 'Number of parameters in the model = ', paramsCount
+        print '**************************************************'
 
     def form_Q(self, inputLambda):
         if self.params['modelType'] == 'multipleMus':
@@ -79,7 +82,7 @@ class GenericQueue(nn.Module):
                     else:
                         self.Q[i][j] = 0.0
 
-        else:
+        elif self.params['modelType'] == 'MMmK':
             self.Q = torch.zeros((self.K, self.K))
             for i in range(self.K):
                 for j in range(self.K):
@@ -106,6 +109,23 @@ class GenericQueue(nn.Module):
                             self.Q[i][j] = tmp
                     else:
                         self.Q[i][j] = 0.0
+
+
+        if self.params['modelType'] == 'allMus':
+            if self.params['cuda'] == True:
+                self.Q = torch.zeros((self.params['K'], self.params['K'])).cuda()
+            else:
+                self.Q = torch.zeros((self.params['K'], self.params['K']))
+
+            self.Q[0][0] = -inputLambda
+            self.Q[0][1] = inputLambda
+            for i in range(1, self.params['K']):
+                for j in range(0, i):
+                    self.Q[i][j] = self.mu[str(i)][j]
+                if i+1 < self.params['K']:
+                    self.Q[i][i+1] = inputLambda
+                self.Q[i][i] = -1*torch.sum(self.Q[i])
+
         return self.Q
 
     def form_const_Q(self, inputLambda):
@@ -131,7 +151,8 @@ class GenericQueue(nn.Module):
                     else:
                         self.Q[i][j] = 0.0
 
-        else:
+
+        elif self.params['modelType'] == 'MMmK':
 
             self.Q = torch.zeros((self.K, self.K))
             for i in range(self.K):
@@ -159,6 +180,21 @@ class GenericQueue(nn.Module):
                             self.Q[i][j] = tmp
                     else:
                         self.Q[i][j] = 0.0
+
+        elif self.params['modelType'] == 'allMus':
+            if self.params['cuda'] == True:
+                self.Q = torch.zeros((self.params['K'], self.params['K'])).cuda()
+            else:
+                self.Q = torch.zeros((self.params['K'], self.params['K']))
+
+            self.Q[0][0] = -inputLambda
+            self.Q[0][1] = inputLambda
+            for i in range(1, self.params['K']):
+                for j in range(0, i):
+                    self.Q[i][j] = self.mu[str(i)][j].item()
+                if i+1 < self.params['K']:
+                    self.Q[i][i+1] = inputLambda
+                self.Q[i][i] = -1*torch.sum(self.Q[i])
 
         return self.Q
 
@@ -198,7 +234,12 @@ class GenericQueue(nn.Module):
         return s
 
     def paramClip(self):
-        self.mu.data.clamp_(min=1.0, max=1e10)
+        if self.params['modelType'] == 'allMus':
+            for i in range(1, len(self.mu)):
+                #self.mu[str(i)].data.clamp_(min=self.params['initialMu'], max=1e10)
+                self.mu[str(i)].data.clamp_(min=1.0, max=1e10)
+        else:
+            self.mu.data.clamp_(min=self.params['initialMu'], max=1e10)
 
     def objective(self, inputLa, dropCount, dropProb):
         if self.params['learningTechnique'] == 'steps':  ###########################
@@ -581,7 +622,12 @@ def train(model=None,
             torch.save(model, modelName)
             bestModel = torch.load(modelName)
 
-        print 'epoch=', e, 'lr=', model.params['lr'], 'mu=', model.mu.data
+        print 'epoch=', e, 'lr=', model.params['lr'], 'mu=',
+        if model.params['modelType'] == 'allMus':
+            print [model.mu[str(i)].data for i in range(1, model.params['K'])]
+        else:
+
+            print model.mu.data
         print 'TrainLoss= ', epochLoss / float(len(inputLambdas))
         print 'MSE=', MSE.item()
         print 'validLoss=', validLoss
@@ -727,13 +773,13 @@ def run_using_real_data():
     ########################################
     params = {
         'cuda': False,
-        'K': 10,
+        'K': 5,
         'm': 9, # no effect when 'modelType': 'multipleMus'
-        'initialMu': 500.0,
-        'modelType': 'multipleMus', #'MMmK', 'multipleMus'
+        'initialMu': 1000.0,
+        'modelType': 'allMus', #'MMmK', 'multipleMus'
         'learningTechnique': 'steps',  # 'steps', 'pi', 'hybrid'
         'steadyStateIterPerSample': 1000,
-        'modelName': 'genericQueueModel_K10',
+        'modelName': 'genericQueueModel_allmus_K5_mu0_1',
         'dataLossType': 'NLL',  # NLL or  MSE
         'steadyStateLossType': 'L1',  # L1 or L2
         't': 1000,
@@ -742,8 +788,8 @@ def run_using_real_data():
         'steadyStateWeight': 0.0,
         'calculatePK': 'AVG',  # MIN, MAX, AVG,
         'optim': 'Adam',
-        'lr': 0.05,
-        'gradientClip': 10.0,
+        'lr': 0.1,
+        'gradientClip': 50.0,
         'gradientClipType': 2
     }
 

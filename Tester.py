@@ -509,7 +509,7 @@ def main():
     #modelName = 'MMmK_model_asd'
     #modelName = 'MMmK_model_m0=1.0_K0=5.0_mu0=5.0_MSE'
 
-    modelName = 'genericQueueModel'
+    modelName = 'genericQueueModel_K5_mu0_1000'
 
 
     model = torch.load(modelName)
