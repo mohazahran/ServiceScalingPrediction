@@ -17,12 +17,12 @@ class MMmK_pytorch(nn.Module):
     def __init__(self, lr, gradientClip = 10.0, gradientClipType = 'inf', optim = 'SGD'):
         super(MMmK_pytorch, self).__init__()
         #K has to be greater than m for the queueing eqn to work (K>m)
-        self.default_m = 1.0
+        self.default_m = 3.0
         self.default_K = 5.0
-        self.default_mu = 5.0
+        self.default_mu = 500.0
         
-        self.m_min,   self.m_max = 1.0, 1e10
-        self.K_min,   self.K_max = 5.0, 1e10
+        self.m_min,   self.m_max = 3.0, 3.0
+        self.K_min,   self.K_max = 5.0, 5.0
         self.mu_min, self.mu_max = 5.0, 1e10
         
         self.clampMin = -1e37
@@ -384,8 +384,8 @@ def main():
     
     
     random.seed(1111)
-    trainQuota = 0.85
-    validQuota = 0.15
+    trainQuota = 0.75
+    validQuota = 0.25
     
     data_X, data_Y = getTrainingData(dir, summaryFile, minDropRate=1, maxDropRate=10)
     
@@ -408,13 +408,13 @@ def main():
     test_X = data_X[trainLen+validLen:]
     test_Y = data_Y[trainLen+validLen:]
     
-    MMmK = MMmK_pytorch(lr=0.01, gradientClip = 0.25, gradientClipType = 2, optim = 'Adam')
+    MMmK = MMmK_pytorch(lr=0.1, gradientClip = 5.0, gradientClipType = 2, optim = 'Adam')
     
     train(MMmK, 
           train_X, train_Y,
           valid_X, valid_Y, 
           test_X, test_Y,
-          epochs = 10000, batchsize = 32, annelingAt = 500,
+          epochs = 10000, batchsize = 4, annelingAt = 500,
           shuffleData = True,
           showBatches = False
           )

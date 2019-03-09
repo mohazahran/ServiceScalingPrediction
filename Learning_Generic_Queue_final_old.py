@@ -31,36 +31,22 @@ class GenericQueue(nn.Module):
         if params['modelType'] == 'MMmK':
             self.m = params['m']
             self.mu = nn.Parameter(torch.FloatTensor([params['initialMu']]), requires_grad=True)
-            
 
-        elif params['modelType'] == 'multipleMus': # MMmK with different mu per state
-            #self.mu = nn.Parameter(torch.FloatTensor([params['initialMu']] * (self.params['K'] - 1)), requires_grad=True)
-            #mus = [params['initialMu']*(i+1) for i in range(self.params['K'] - 1)]
-            mus = [params['initialMu'] for i in range(self.params['K'] - 1)]
+        elif params['modelType'] == 'multipleMus':  # MMmK with different mu per state
+            # self.mu = nn.Parameter(torch.FloatTensor([params['initialMu']] * (self.params['K'] - 1)), requires_grad=True)
+            mus = [params['initialMu'] * (i + 1) for i in range(self.params['K'] - 1)]
             self.mu = nn.Parameter(torch.FloatTensor(mus), requires_grad=True)
-            
 
-        elif params['modelType'] == 'allMus': # each state has a different mu for all previous states
+        elif params['modelType'] == 'allMus':  # each state has a different mu for all previous states
             self.mu = nn.ParameterDict()
             for i in range(1, self.params['K']):
                 self.mu[str(i)] = nn.Parameter(torch.FloatTensor([params['initialMu']] * i), requires_grad=True)
-                
 
-        if params['learningTechnique'] == 'pi':
+        if params['learningTechnique'] == 'pi' or params['learningTechnique'] == 'hybrid':
             self.pi = nn.Parameter(torch.FloatTensor([[1.0 / self.K] * self.K]), requires_grad=True)
-            self.steadyState_optimiser = getattr(torch.optim, params['optim'])([self.pi], lr=params['steadyState_lr'])
-            self.optimiser = getattr(torch.optim, params['optim'])([self.mu], lr=params['lr'])
-            
-        elif params['learningTechnique'] == 'hybrid':
-            self.pi = nn.Parameter(torch.FloatTensor([[1.0 / self.K] * self.K]), requires_grad=True)
-            self.optimiser = getattr(torch.optim, params['optim'])(self.parameters(), lr=params['lr'])
-        else:
-            self.optimiser = getattr(torch.optim, params['optim'])(self.parameters(), lr=params['lr'])
-            
-            
 
         self.Q = torch.zeros(self.params['K'], self.params['K'])
-        
+        self.optimiser = getattr(torch.optim, params['optim'])(self.parameters(), lr=params['lr'])
 
         paramsCount = 0
         for p in list(self.parameters()):
@@ -69,9 +55,9 @@ class GenericQueue(nn.Module):
             else:
                 paramsCount += p.shape[0] * p.shape[1]
 
-        print '**************************************************'
-        print 'Number of parameters in the model = ', paramsCount
-        print '**************************************************'
+        print        '**************************************************'
+        print        'Number of parameters in the model = ', paramsCount
+        print        '**************************************************'
 
     def form_Q(self, inputLambda):
         if self.params['modelType'] == 'multipleMus':
@@ -124,7 +110,6 @@ class GenericQueue(nn.Module):
                     else:
                         self.Q[i][j] = 0.0
 
-
         if self.params['modelType'] == 'allMus':
             if self.params['cuda'] == True:
                 self.Q = torch.zeros((self.params['K'], self.params['K'])).cuda()
@@ -136,9 +121,9 @@ class GenericQueue(nn.Module):
             for i in range(1, self.params['K']):
                 for j in range(0, i):
                     self.Q[i][j] = self.mu[str(i)][j]
-                if i+1 < self.params['K']:
-                    self.Q[i][i+1] = inputLambda
-                self.Q[i][i] = -1*torch.sum(self.Q[i])
+                if i + 1 < self.params['K']:
+                    self.Q[i][i + 1] = inputLambda
+                self.Q[i][i] = -1 * torch.sum(self.Q[i])
 
         return self.Q
 
@@ -206,9 +191,9 @@ class GenericQueue(nn.Module):
             for i in range(1, self.params['K']):
                 for j in range(0, i):
                     self.Q[i][j] = self.mu[str(i)][j].item()
-                if i+1 < self.params['K']:
-                    self.Q[i][i+1] = inputLambda
-                self.Q[i][i] = -1*torch.sum(self.Q[i])
+                if i + 1 < self.params['K']:
+                    self.Q[i][i + 1] = inputLambda
+                self.Q[i][i] = -1 * torch.sum(self.Q[i])
 
         return self.Q
 
@@ -250,11 +235,10 @@ class GenericQueue(nn.Module):
     def paramClip(self):
         if self.params['modelType'] == 'allMus':
             for i in range(1, self.params['K']):
-                #self.mu[str(i)].data.clamp_(min=self.params['initialMu'], max=1e10)
+                # self.mu[str(i)].data.clamp_(min=self.params['initialMu'], max=1e10)
                 self.mu[str(i)].data.clamp_(min=1.0, max=1e10)
         else:
             self.mu.data.clamp_(min=self.params['initialMu'], max=1e10)
-
 
     def change_lr(self, lr):
         for param_group in self.optimiser.param_groups:
@@ -272,9 +256,8 @@ class GenericQueue(nn.Module):
                 if self.params['steadyStateLossType'] == 'L2':
                     steady_state_loss = F.mse_loss(torch.mm(Pt_1_K, P), Pt_1_K)
                 elif self.params['steadyStateLossType'] == 'L1':
-                    #steady_state_loss = torch.sum(torch.abs(torch.mm(Pt_1_K, P) - Pt_1_K))
+                    # steady_state_loss = torch.sum(torch.abs(torch.mm(Pt_1_K, P) - Pt_1_K))
                     steady_state_loss = torch.mean(torch.sum(torch.abs(torch.mm(Pt_1, P) - Pt_1), 1))
-                    
 
                 if cnt > self.params['t'] or steady_state_loss < self.params['steadyStateEpsilon']:
                     break
@@ -287,8 +270,6 @@ class GenericQueue(nn.Module):
                 PK = torch.min(Pt[:, -1])
             elif self.params['calculatePK'] == 'MAX':
                 PK = torch.max(Pt[:, -1])
-            else:
-                PK = torch.max(Pt[-1,-1])
 
 
 
@@ -300,10 +281,10 @@ class GenericQueue(nn.Module):
                 Pt = torch.mm(Pt, Pt)
 
             self.pi.data = torch.FloatTensor([[1.0 / self.K] * self.K])
-            #self.pi.data = Pt[-1].data.view(1,self.pi.data.size(1))
+            # self.pi.data = Pt[-1].data.view(1,self.pi.data.size(1))
             cnt = 0
-            #lr = self.params['steadyState_lr']
-            #self.change_lr(lr)
+            lr = self.params['steadyState_lr']
+            self.change_lr(lr)
             while True:
                 cnt += 1
                 pi_probs = F.softmax(self.pi, dim=1)
@@ -313,7 +294,8 @@ class GenericQueue(nn.Module):
                 elif self.params['steadyStateLossType'] == 'L1':
                     steady_state_loss = torch.sum(torch.abs(pi_P - pi_probs))
 
-                if steady_state_loss < self.params['steadyStateEpsilon'] or cnt > self.params['steadyStateIterPerSample']:
+                if steady_state_loss < self.params['steadyStateEpsilon'] or cnt > self.params[
+                    'steadyStateIterPerSample']:
                     break
 
                 steady_state_loss.backward()
@@ -322,10 +304,10 @@ class GenericQueue(nn.Module):
                 # self.mu.grad.fill_(0)
                 nn.utils.clip_grad_norm_(self.parameters(), self.params['gradientClip'],
                                          norm_type=self.params['gradientClipType'])
-                self.steadyState_optimiser.step()
-                self.steadyState_optimiser.zero_grad()
-                #lr = lr/2.0
-                #self.change_lr(lr)
+                self.optimiser.step()
+                self.optimiser.zero_grad()
+                # lr = lr/2.0
+                # self.change_lr(lr)
 
             P = self.form_P(inputLa)
 
@@ -334,56 +316,47 @@ class GenericQueue(nn.Module):
                 Pt = torch.mm(Pt, Pt)
             # logPK = F.log_softmax(torch.mm(F.softmax(self.pi, dim=1), Pt), dim=1)[-1][-1]
             PK = torch.mm(F.softmax(self.pi, dim=1), Pt)[-1][-1]
-            #self.change_lr(self.params['lr'])
+            self.change_lr(self.params['lr'])
 
 
 
         else:  # hybrid ###########################################################
-            P = self.form_P(inputLa)
-            Pt = P
-            for t in range(self.params['t']):
-                Pt = torch.mm(Pt, Pt)
-
+            P = self.form_const_P(inputLa)
+            cnt = 1
+            Pt_1 = torch.mm(P, P)
             self.pi.data = torch.FloatTensor([[1.0 / self.K] * self.K])
-            #self.pi.data = Pt[-1].data.view(1,self.pi.data.size(1))
-            cnt = 0
-            #lr = self.params['steadyState_lr']
-            #self.change_lr(lr)
             while True:
+                Pt = torch.mm(Pt_1, Pt_1)
                 cnt += 1
+
                 pi_probs = F.softmax(self.pi, dim=1)
                 pi_P = torch.mm(pi_probs, Pt)
+
                 if self.params['steadyStateLossType'] == 'L2':
                     steady_state_loss = F.mse_loss(pi_P, pi_probs)
                 elif self.params['steadyStateLossType'] == 'L1':
                     steady_state_loss = torch.sum(torch.abs(pi_P - pi_probs))
 
-                if steady_state_loss < self.params['steadyStateEpsilon'] or cnt > self.params['steadyStateIterPerSample']:
+                if steady_state_loss < self.params['steadyStateEpsilon']:
                     break
 
-                #steady_state_loss.backward()
-                steady_state_loss.backward(retain_graph=True)
-                # self.zero_out_gradients_for_nonParameters()
-                # self.mu.grad.fill_(0)
+                Pt_1 = Pt
+                steady_state_loss.backward()
                 nn.utils.clip_grad_norm_(self.parameters(), self.params['gradientClip'],
                                          norm_type=self.params['gradientClipType'])
                 self.optimiser.step()
                 self.optimiser.zero_grad()
-                #lr = lr/2.0
-                #self.change_lr(lr)
 
-            #P = self.form_P(inputLa)
-
-            #Pt = P
-            #for t in range(self.params['t']):
-            #    Pt = torch.mm(Pt, Pt)
+            P = self.form_P(inputLa)
+            Pt = P
+            for t in range(cnt):
+                Pt = torch.mm(Pt, Pt)
             # logPK = F.log_softmax(torch.mm(F.softmax(self.pi, dim=1), Pt), dim=1)[-1][-1]
             PK = torch.mm(F.softmax(self.pi, dim=1), Pt)[-1][-1]
-            #self.change_lr(self.params['lr'])
 
         ############################################################
 
-        logPK = torch.log( torch.clamp(PK, min = 1e-10, max = 1.0))
+        logPK = torch.log(torch.clamp(PK, min=1e-10, max=1.0))
 
         if self.params['dataLossType'] == 'MSE':
             dataLoss = F.mse_loss(PK, torch.FloatTensor([dropProb]))
@@ -407,7 +380,7 @@ class GenericQueue(nn.Module):
                 if self.params['steadyStateLossType'] == 'L2':
                     steady_state_loss = F.mse_loss(torch.mm(Pt_1_K, P), Pt_1_K)
                 elif self.params['steadyStateLossType'] == 'L1':
-                    #steady_state_loss = torch.sum(torch.abs(torch.mm(Pt_1_K, P) - Pt_1_K))
+                    # steady_state_loss = torch.sum(torch.abs(torch.mm(Pt_1_K, P) - Pt_1_K))
                     steady_state_loss = torch.mean(torch.sum(torch.abs(torch.mm(Pt_1, P) - Pt_1), 1))
 
                 if cnt > self.params['t'] or steady_state_loss < self.params['steadyStateEpsilon']:
@@ -421,8 +394,6 @@ class GenericQueue(nn.Module):
                 PK = torch.min(Pt[:, -1])
             elif self.params['calculatePK'] == 'MAX':
                 PK = torch.max(Pt[:, -1])
-            else:
-                PK = torch.max(Pt[-1,-1])
 
             return PK.item()
 
@@ -433,7 +404,7 @@ class GenericQueue(nn.Module):
             for t in range(self.params['t']):
                 Pt = torch.mm(Pt, Pt)
 
-            #self.pi.data = torch.FloatTensor([[1.0 / self.K] * self.K])
+            # self.pi.data = torch.FloatTensor([[1.0 / self.K] * self.K])
             self.pi.data = torch.FloatTensor([[1.0 / self.K] * self.K])
             cnt = 0
             while True:
@@ -445,45 +416,8 @@ class GenericQueue(nn.Module):
                 elif self.params['steadyStateLossType'] == 'L1':
                     steady_state_loss = torch.sum(torch.abs(pi_P - pi_probs))
 
-                if steady_state_loss < self.params['steadyStateEpsilon'] or cnt > self.params['steadyStateIterPerSample']:
-                    break
-
-                steady_state_loss.backward()
-                # steady_state_loss.backward(retain_graph=True)
-                # self.zero_out_gradients_for_nonParameters()
-                self.mu.grad.fill_(0)
-                nn.utils.clip_grad_norm_(self.parameters(), self.params['gradientClip'],
-                                         norm_type=self.params['gradientClipType'])
-                self.steadyState_optimiser.step()
-                self.steadyState_optimiser.zero_grad()
-
-            # P = self.form_P(inputLambda)
-            # Pt = P
-            # for t in range(self.params['t']):
-            #    Pt = torch.mm(Pt, Pt)
-
-            PK = torch.mm(F.softmax(self.pi, dim=1), Pt)[-1][-1]
-            return PK.item()
-
-        else:  # hybrid ###########################################################
-            P = self.form_const_P(la)
-            Pt = P
-            for t in range(self.params['t']):
-                Pt = torch.mm(Pt, Pt)
-
-            #self.pi.data = torch.FloatTensor([[1.0 / self.K] * self.K])
-            self.pi.data = torch.FloatTensor([[1.0 / self.K] * self.K])
-            cnt = 0
-            while True:
-                cnt += 1
-                pi_probs = F.softmax(self.pi, dim=1)
-                pi_P = torch.mm(pi_probs, Pt)
-                if self.params['steadyStateLossType'] == 'L2':
-                    steady_state_loss = F.mse_loss(pi_P, pi_probs)
-                elif self.params['steadyStateLossType'] == 'L1':
-                    steady_state_loss = torch.sum(torch.abs(pi_P - pi_probs))
-
-                if steady_state_loss < self.params['steadyStateEpsilon'] or cnt > self.params['steadyStateIterPerSample']:
+                if steady_state_loss < self.params['steadyStateEpsilon'] or cnt > self.params[
+                    'steadyStateIterPerSample']:
                     break
 
                 steady_state_loss.backward()
@@ -502,6 +436,26 @@ class GenericQueue(nn.Module):
 
             PK = torch.mm(F.softmax(self.pi, dim=1), Pt)[-1][-1]
             return PK.item()
+
+        else:  # hybrid ###########################################################
+            P = self.form_const_P(inputLa)
+            cnt = 1
+            Pt_1 = torch.mm(P, P)
+            self.pi.data = torch.FloatTensor([[1.0 / self.K] * self.K])
+            while True:
+                Pt = torch.mm(Pt_1, Pt_1)
+                cnt += 1
+
+                pi_probs = F.softmax(self.pi, dim=1)
+                pi_P = torch.mm(pi_probs, Pt)
+
+                if self.params['steadyStateLossType'] == 'L2':
+                    steady_state_loss = F.mse_loss(pi_P, pi_probs)
+                elif self.params['steadyStateLossType'] == 'L1':
+                    steady_state_loss = torch.sum(torch.abs(pi_P - pi_probs))
+
+                if steady_state_loss < self.params['steadyStateEpsilon']:
+                    break
 
 
 ############################################################################################################
@@ -556,9 +510,9 @@ def evaluate_given_model(testModel, testLambdas, testPKs, plotFig=True):
     for i in range(len(testLambdas)):
         est_PK = testModel.predict(testLambdas[i])
         logPK = math.log(numpy.clip(est_PK, 1e-10, 1.0))
-        #logPK = math.log(est_PK)
+        # logPK = math.log(est_PK)
         est_PKs.append(est_PK)
-        actualDrops = float(math.ceil(testPKs[i] * testLambdas[i]))
+        actualDrops = testPKs[i] * testLambdas[i]
         NLL = - (actualDrops * logPK + (testLambdas[i] - actualDrops) * math.log(1 - math.exp(logPK)))
         avg_NLL += NLL
 
@@ -571,7 +525,7 @@ def evaluate_given_model(testModel, testLambdas, testPKs, plotFig=True):
 
     MSE = F.mse_loss(est_PK_torch, testPKs_torch)
     avg_NLL = avg_NLL / float(len(testLambdas))
-    print 'Evaluation MSE=', MSE.item(), 'NLL=', avg_NLL
+    print    'Evaluation MSE=', MSE.item(), 'NLL=', avg_NLL
 
     if plotFig:
         fig = plt.figure(1, figsize=(6, 4))
@@ -644,7 +598,7 @@ def train(model=None,
             est_PKs.append(torch.exp(logPK).item())
             true_PKs.append(PKs[b])
 
-            #print(est_PKs[-1], true_PKs[-1].item()),
+            # print(est_PKs[-1], true_PKs[-1].item()),
 
             total_loss = total_loss + loss
             epochLoss += loss.item()
@@ -658,7 +612,7 @@ def train(model=None,
                 model.optimiser.zero_grad()
                 model.paramClip()
                 if showBatches:
-                    print '\nbatch#', b, 'loss=', total_loss.item(), 'mu=', model.mu.data
+                    print                    '\nbatch#', b, 'loss=', total_loss.item(), 'mu=', model.mu.data
                 total_loss = 0.0
 
         total_loss = 0.0
@@ -667,7 +621,7 @@ def train(model=None,
         MSE = F.mse_loss(est_PKs, true_PKs)
 
         validMSE, validNLL = evaluate_given_model(model, validLambdas, validPKs, plotFig=False)
-        #validMSE, validNLL = 0, 0
+        validMSE, validNLL = 0, 0
         if model.params['dataLossType'] == 'MSE':
             validLoss = validMSE
         elif model.params['dataLossType'] == 'NLL':
@@ -681,21 +635,20 @@ def train(model=None,
             torch.save(model, model.params['modelName'])
             bestModel = torch.load(model.params['modelName'])
 
-        print 'Epoch ',e, '--------------------------------------'
-        print 'lr=', model.params['lr'],
-        print 'TrainLoss= ', epochLoss / float(len(inputLambdas))
-        print 'MSE=', MSE.item()
-        print 'validLoss=', validLoss
+        print        'Epoch ', e, '--------------------------------------'
+        print        'lr=', model.params['lr'],
+        print        'TrainLoss= ', epochLoss / float(len(inputLambdas))
+        print        'MSE=', MSE.item()
+        print        'validLoss=', validLoss
         if model.params['modelType'] == 'allMus':
             mu = [model.mu[str(i)].data for i in range(1, model.params['K'])]
         else:
 
             mu = model.mu.data
-        print 'mu=',mu
-        print '\tbest validLoss=', bestModel.validLoss, 'best trainLoss=', bestModel.trainLoss
-        print '\tbest mu=',bestModel.mu.data
+        print        'mu=', mu
+        print        '\tbest validLoss=', bestModel.validLoss, 'best trainLoss=', bestModel.trainLoss
+        print        '\tbest mu=', bestModel.mu.data
         print
-
         torch.save(bestModel, bestModel.params['modelName'])
 
 
@@ -713,49 +666,47 @@ def run_using_MMmK_simulation():
     # train_X = list(range(10, 1000, 2))
     random.shuffle(train_X)
     # train_X = train_X[:inputDataSize]
-
-    singleValue = 600
-
+    singleValue = 200
     train_X = [singleValue]
 
     train_Y = [math.exp(solver.M_M_m_K_log(float(inp) / float(true_mu), true_m, true_K)) for inp in train_X]
 
     drops = [math.ceil(train_X[i] * train_Y[i]) for i in range(len(train_X))]
 
-    print '#drops=', drops, train_Y
-    #exit(1)
+    print    '#drops=', drops, train_Y
+    # exit(1)
     valid_X = list(range(1, maxLambda, 7))
     # valid_X = list(range(5, 1000, 7))
     random.shuffle(valid_X)
     valid_X = [singleValue]
-    #valid_X = valid_X[:inputDataSize]
+    valid_X = valid_X[:inputDataSize]
     valid_Y = [math.exp(solver.M_M_m_K_log(float(inp) / float(true_mu), true_m, true_K)) for inp in valid_X]
 
     ########################################
-    
+
     params = {
         'cuda': False,
-        'm': true_m,
-        'K': true_K,
-        'initialMu': 20.0,
-        'modelType': 'multipleMus',  # 'MMmK', 'multipleMus'
-        'learningTechnique': 'steps',  # 'steps', 'pi', 'hybrid'
+        'm': 3,
+        'K': 5,
+        'initialMu': 10.0,
+        'modelType': 'MMmK',  # 'MMmK', 'multipleMus'
+        'learningTechnique': 'pi',  # 'steps', 'pi', 'hybrid'
         'steadyStateIterPerSample': 1000,
-        'modelName': 'genericQueueModel_MMmK_K5_m3_simulatedData_la75_pi',
+        'modelName': 'genericQueueModel_MMmK_K5_m3_simulatedData_la75_pi_asd',
         'dataLossType': 'NLL',  # NLL or  MSE
         'steadyStateLossType': 'L1',  # L1 or L2
-        't': 1000,
+        't': 5,
         'steadyStateEpsilon': 1e-4,
         'dataLossWeight': 1.0,
         'steadyStateWeight': 0.0,
-        'calculatePK': 'LAST',  # MIN, MAX, AVG,
+        'calculatePK': 'AVG',  # MIN, MAX, AVG,
         'optim': 'Adam',
         'steadyState_lr': 0.1,
-        'lr': 0.1,
+        'lr': 0.05,
         'gradientClip': 10.0,
         'gradientClipType': 2
     }
-    
+
     '''
     params = {
         'cuda': False,
@@ -781,14 +732,10 @@ def run_using_MMmK_simulation():
     }
     '''
 
-
-
-    print
-    'Parameters:\n', params
+    print    'Parameters:\n', params
 
     if torch.cuda.is_available():
-        print
-        'torch.cuda.is_available() = ', torch.cuda.is_available()
+        print        'torch.cuda.is_available() = ', torch.cuda.is_available()
 
     random.seed(1111)
     if params['cuda'] == True:
@@ -822,7 +769,7 @@ def run_using_real_data():
     random.seed(1111)
 
     dir = '/Users/mohame11/Documents/myFiles/Career/Work/Purdue/PhD_courses/projects/queueing/results_24_2018.10.20-13.31.38_client_server/sipp_results/'
-    #dir = '/Users/mohame11/Documents/myFiles/Career/Work/Purdue/PhD_courses/projects/queueing/results_INVITE_CORE_1_K_425982_SCALE_60_REMOTE_CPU_2019.01.08-01.56.08/sipp_results/'
+    # dir = '/Users/mohame11/Documents/myFiles/Career/Work/Purdue/PhD_courses/projects/queueing/results_INVITE_CORE_1_K_425982_SCALE_60_REMOTE_CPU_2019.01.08-01.56.08/sipp_results/'
     # dir = '/Users/mohame11/Documents/myFiles/Career/Work/Purdue/PhD_courses/projects/queueing/results_CORES_4_K_DEFT_SCALE_86_2018.10.29-22.19.41/sipp_results/'
     # dir = '/Users/mohame11/Documents/myFiles/Career/Work/Purdue/PhD_courses/projects/queueing/results_CORES_2_K_100000_SCALE_43_2018.11.03-13.38.21/sipp_results/'
 
@@ -851,7 +798,7 @@ def run_using_real_data():
     trainLen = int(trainQuota * len(data_X))
     validLen = int(validQuota * len(data_X))
 
-    print 'trainLen=', trainLen, 'validLen=', validLen
+    print    'trainLen=', trainLen, 'validLen=', validLen
 
     train_X = data_X[:trainLen]
     train_Y = data_Y[:trainLen]
@@ -867,34 +814,33 @@ def run_using_real_data():
         'cuda': False,
         'm': 3,
         'K': 5,
-        'initialMu': 500.0,
+        'initialMu': 55.0,
         'modelType': 'MMmK',  # 'MMmK', 'multipleMus'
         'learningTechnique': 'pi',  # 'steps', 'pi', 'hybrid'
         'steadyStateIterPerSample': 1000,
-        'modelName': 'genericQueueModel_MMmK_K5_m5_pi',
+        'modelName': 'genericQueueModel_MMmK_K5_m3_simulatedData_la75_pi',
         'dataLossType': 'NLL',  # NLL or  MSE
         'steadyStateLossType': 'L1',  # L1 or L2
-        't': 3,
+        't': 5,
         'steadyStateEpsilon': 1e-4,
         'dataLossWeight': 1.0,
         'steadyStateWeight': 0.0,
         'calculatePK': 'AVG',  # MIN, MAX, AVG,
         'optim': 'Adam',
         'steadyState_lr': 0.1,
-        'lr': 1.0,
+        'lr': 0.05,
         'gradientClip': 10.0,
         'gradientClipType': 2
     }
 
-    print 'Parameters:\n', params
+    print    'Parameters:\n', params
 
     # print torch.__version__
 
     # print torch.version.cuda
 
     if torch.cuda.is_available():
-        print
-        'torch.cuda.is_available() = ', torch.cuda.is_available()
+        print        'torch.cuda.is_available() = ', torch.cuda.is_available()
 
     if params['cuda'] == True:
         torch.cuda.manual_seed(1111)
@@ -936,7 +882,7 @@ def test():
         'steadyStateWeight': 0.0,
         'calculatePK': 'MIN',  # MIN, MAX, AVG,
         'optim': 'Adam',
-        'lr': 0.1,
+        'lr': 0.05,
         'gradientClip': 10.0,
         'gradientClipType': 2
     }
@@ -952,5 +898,5 @@ def test():
 if __name__ == "__main__":
     # test()
     run_using_MMmK_simulation()
-    #run_using_real_data()
+    # run_using_real_data()
     print('DONE!')

@@ -17,11 +17,11 @@ class learn_MMmK_bernoulli(nn.Module):
     def __init__(self, lr, gradientClip = 10.0, gradientClipType = 'inf', optim = 'SGD'):
         super(learn_MMmK_bernoulli, self).__init__()
         #K has to be greater than m for the queueing eqn to work (K>m)
-        self.default_m = 1.0
+        self.default_m = 3.0
         self.default_K = 5.0
-        self.default_mu = 5.0
+        self.default_mu = 1020.15063477
         
-        self.m_min,   self.m_max = 1.0, 1.0
+        self.m_min,   self.m_max = 3.0, 3.0
         self.K_min,   self.K_max = 5.0, 5.0
         self.mu_min, self.mu_max = 5.0, 1e10
         
@@ -50,8 +50,7 @@ class learn_MMmK_bernoulli(nn.Module):
         print '**************************************************'
         
     def toStr(self):
-        #s = 'm0=%.1f_K0=%.1f_mu0=%.1f_mixed_.5_0_.5_model_S'%(self.default_m, self.default_K, self.default_mu)
-        s = 'asd'
+        s = 'm0=%.1f_K0=%.1f_mu0=%.1f'%(self.default_m, self.default_K, self.default_mu)
         return s
         
     def paramClip(self):
@@ -243,7 +242,7 @@ def getTrainingData(dir, summaryFile, minDropRate, maxDropRate):
     df = pd.read_csv(sfile, usecols = ['Rate File', ' Failed Calls'])
     df.fillna(0, inplace=True)
     train_X = []
-    train_Y = [] 
+    train_Y = []
     for i, row in df.iterrows():
         if row[' Failed Calls'] < minDropRate or row[' Failed Calls'] > maxDropRate:
             continue
@@ -278,6 +277,7 @@ def evaluate(MMmK, data_X, data_Y):
     #PK = torch.clamp(PK, min=0, max=1.0)
     loss = bernoulli_NLL(logPK, data_X, data_Y)
     totalLoss = loss.item()
+    MMmK.train()
     return totalLoss
 
 
@@ -318,8 +318,6 @@ def train(MMmK, train_X, train_Y, valid_X, valid_Y, test_X, test_Y, epochs, batc
             train_Y = train_Y[idxs]
         
         for b in range(numOfBatchs):
-            if b == 167:
-                dbg = 1
             batch_X = train_X[b:b+batchsize] 
             batch_Y = train_Y[b:b+batchsize] 
             logPK = MMmK.forwardPass(batch_X, clampNumbers = False)
@@ -343,17 +341,17 @@ def train(MMmK, train_X, train_Y, valid_X, valid_Y, test_X, test_Y, epochs, batc
             
         
         #trainLoss = evaluate(MMmK, train_X, train_Y)
-        validLoss = evaluate(MMmK, valid_X, valid_Y) / float(len(valid_X))
+        validLoss = evaluate(MMmK, valid_X, valid_Y)
         if len(test_X) != 0:
-            testLoss = evaluate(MMmK, test_X, test_Y) / float(len(test_X))
+            testLoss = evaluate(MMmK, test_X, test_Y)
         else:
             testLoss = -1
             
-        trainLoss = totalLoss / float(len(train_X))
+        trainLoss = totalLoss
         print 'Epoch',e,'--------------------------------------'
-        print 'Total Train MSE loss = ', trainLoss, 'lr=', MMmK.lr
-        print 'Total Valid MSE loss = ', validLoss
-        print 'Total Test MSE loss  = ', testLoss 
+        print 'Total Train loss = ', trainLoss, 'lr=', MMmK.lr
+        print 'Total Valid loss = ', validLoss
+        print 'Total Test loss  = ', testLoss
         print 'm=',MMmK.m.item(), 'K=',MMmK.K.item(), 'mu=',MMmK.mu.item()
         print '--------------------------------------'
         
@@ -372,11 +370,11 @@ def train(MMmK, train_X, train_Y, valid_X, valid_Y, test_X, test_Y, epochs, batc
             test_bestValidLoss = testLoss
             train_bestValidLoss = trainLoss
             #params = '_m=%0.3f_K=%0.3f_mu=%0.3f'%(bestModel.m.item(), bestModel.K.item(), bestModel.mu.item()) 
-            torch.save(bestModel, 'MMmK_model_'+MMmK.toStr())
+            torch.save(bestModel, 'MMmK_model_bernoulli'+MMmK.toStr())
             
         print '\t', 'train loss=',train_bestValidLoss, 'best valid=',bestValidLoss, 'test loss=', test_bestValidLoss, ' m=',bestModel.m.item(), 'K=',bestModel.K.item(), 'mu=',bestModel.mu.item()
         
-    torch.save(bestModel, 'MMmK_model_bernoulli')
+    torch.save(bestModel, 'MMmK_model_bernoulli'+MMmK.toStr())
             
 
 
@@ -405,8 +403,8 @@ def main():
     
     
     random.seed(1111)
-    trainQuota = 0.85
-    validQuota = 0.15
+    trainQuota = 0.75
+    validQuota = 0.25
     
     data_X, data_Y = getTrainingData(dir, summaryFile, minDropRate=1, maxDropRate=10)
     
@@ -428,21 +426,79 @@ def main():
     
     test_X = data_X[trainLen+validLen:]
     test_Y = data_Y[trainLen+validLen:]
+
+    trainDrops = 0
+    for i in train_Y:
+        trainDrops += i.item()
+
+    validDrops = 0
+    for i in valid_Y:
+        validDrops += i.item()
+
+    print '#trainDrops=', trainDrops, '#validDrops=', validDrops
+    #exit(1)
     
-    MMmK = learn_MMmK_bernoulli(lr=0.01, gradientClip = 0.25, gradientClipType = 2, optim = 'Adam')
+    MMmK = learn_MMmK_bernoulli(lr=0.1, gradientClip = 5.0, gradientClipType = 2, optim = 'Adam')
     
     train(MMmK, 
           train_X, train_Y,
           valid_X, valid_Y, 
           test_X, test_Y,
-          epochs = 10000, batchsize = 32, annelingAt = 500,
+          epochs = 10000, batchsize = 4, annelingAt = 500,
           shuffleData = True,
           showBatches = False
           )
-    
+
+
+def test():
+    dir = '/Users/mohame11/Documents/myFiles/Career/Work/Purdue/PhD_courses/projects/queueing/results_24_2018.10.20-13.31.38_client_server/sipp_results/'
+    summaryFile = 'summary_data_dump.csv'
+
+    random.seed(1111)
+    trainQuota = 0.75
+    validQuota = 0.25
+
+    data_X, data_Y = getTrainingData(dir, summaryFile, minDropRate=1, maxDropRate=10)
+
+    # shuffle data
+    combined = list(zip(data_X, data_Y))
+    random.shuffle(combined)
+    data_X[:], data_Y[:] = zip(*combined)
+
+    trainLen = int(trainQuota * len(data_X))
+    validLen = int(validQuota * len(data_X))
+
+    print 'trainLen=', trainLen, 'validLen=', validLen
+
+    train_X = data_X[:trainLen]
+    train_Y = data_Y[:trainLen]
+
+    valid_X = data_X[trainLen:trainLen + validLen]
+    valid_Y = data_Y[trainLen:trainLen + validLen]
+
+    test_X = data_X[trainLen + validLen:]
+    test_Y = data_Y[trainLen + validLen:]
+
+    trainDrops = 0
+    for i in train_Y:
+        trainDrops += i.item()
+
+    validDrops = 0
+    for i in valid_Y:
+        validDrops += i.item()
+
+    print '#trainDrops=', trainDrops, '#validDrops=', validDrops
+    # exit(1)
+
+    MMmK = learn_MMmK_bernoulli(lr=0.1, gradientClip=5.0, gradientClipType=2, optim='Adam')
+    valid_X = Variable(torch.FloatTensor(train_X))
+    valid_Y = Variable(torch.FloatTensor(train_Y))
+    validLoss = evaluate(MMmK, valid_X, valid_Y)
+    print validLoss
     
 
 
 if __name__ == "__main__":
-    main()
+    test()
+    #main()
     print('DONE!')

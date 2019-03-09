@@ -6,20 +6,22 @@ Created on Oct 31, 2018
 import matplotlib as mpl
 mpl.use('TkAgg')
 import matplotlib.pyplot as plt
-from learn_MMmK import *
-from simple_NN import *
-from sliding_NN import *
-from LSTM import *
+#from learn_MMmK import *
+#from simple_NN import *
+#from sliding_NN import *
+#from LSTM import *
 import numpy as np
-from learn_MMmK_slidingWin import *
-from MMmK_LSTM import *
+#from learn_MMmK_slidingWin import *
+#from MMmK_LSTM import *
 from learn_MMmK_bernoulli import *
-from learn_genericQueue_fromData import *
-from useGenericQueue_learn_MMmK_multipleMus import *
+#from learn_genericQueue_fromData import *
+#from useGenericQueue_learn_MMmK_multipleMus import *
 
 #from Learning_Generic_Queue_MMmK import *
 #from Learning_Generic_Queue import *
-from Learning_Generic_Queue_final import *
+#from Learning_Generic_Queue_final import *
+#from Learning_Generic_Queue_final_customGradients import *
+from Learning_Generic_Queue_final_customGradients_autoDiff import *
 
 class Tester(object):
     '''
@@ -244,6 +246,7 @@ class Tester(object):
         totalInputPackets = 0
         totalDroppedPackets = 0
         MSE = 0
+        NLL = 0
         intervalCount = 0
         print 'time_interval empirical_PK estimated_PK squareLoss'
         est_PKs = []
@@ -301,12 +304,13 @@ class Tester(object):
                      
                 timeIntervals.append(intervalCount)
                 emp_PKs.append(empirical_PK)
-                est_PKs.append(estimated_PK) 
+                est_PKs.append(estimated_PK)
                 my_lambdas.append(my_lambda) 
                 drops.append(avgDroppedPackets)
                 
                 squaredLoss = (empirical_PK - estimated_PK)**2
                 MSE += squaredLoss
+
                 
                 print intervalCount, empirical_PK, estimated_PK, squaredLoss
                 
@@ -327,8 +331,13 @@ class Tester(object):
                     
                 for dropCol in droppedPacketsCols:
                     totalDroppedPackets += row[dropCol] * calls_to_packets
-        
+
+        NLL = -torch.sum(torch.FloatTensor(drops) * torch.log(torch.FloatTensor(est_PKs)) + (torch.FloatTensor(my_lambdas) - torch.FloatTensor(drops)) * torch.log(1 - torch.FloatTensor(est_PKs)))
+        NLL = NLL / float(len(my_lambdas))
+
         print 'MSE=', squaredLoss/intervalCount
+        print 'NLL=', NLL.item()
+        print '#drops=', sum(drops)
         
         fig = plt.figure(1, figsize=(6, 4))
         #plt.xticks([x for x in range(1,max(timeIntervals))])
@@ -363,7 +372,7 @@ class Tester(object):
         '''
         
         plt.legend(loc = 2, prop={'size':17}, labelspacing=0.1) 
-        fig.suptitle(self.fname, fontsize=12, fontweight='bold', horizontalalignment='center', y=.86)
+        #fig.suptitle(self.fname, fontsize=12, fontweight='bold', horizontalalignment='center', y=.86)
         plt.grid()                                                                     
         #plt.savefig(resultsPath+'combined_rec_prec_plot_withActionSampling.pdf', bbox_inches='tight')
         plt.show() 
@@ -507,20 +516,21 @@ def main():
     #modelName = 'generic_MMmK2_learningSteadyState'
     #modelName = 'MMmK_model_asd'
     #modelName = 'MMmK_model_asd'
-    #modelName = 'MMmK_model_m0=1.0_K0=5.0_mu0=5.0_MSE'
 
-    modelName = 'genericQueueModel_K5_mu0_1000'
+    #modelName = 'MMmK_model_bernoullim0=5.0_K0=5.0_mu0=5.0'
+
+    modelName = 'genericQueueModel_embeddedMC_K5_realData_customGradient_250_08'
 
 
     model = torch.load(modelName)
-    print model.params
-    print model.mu.data
+    #print model.params
+    print model.mus_2_str()
 
     #model.mu.data.clamp_(min = 660.3567, max = 660.3567)
     
     direct = '/Users/mohame11/Documents/myFiles/Career/Work/Purdue/PhD_courses/projects/queueing/'
-    #direct += '/results_24_2018.10.20-13.31.38_client_server/sipp_results/'
-    direct += '/results_INVITE_CORE_1_K_425982_SCALE_60_REMOTE_CPU_2019.01.08-01.56.08/sipp_results/'
+    direct += '/results_24_2018.10.20-13.31.38_client_server/sipp_results/'
+    #direct += '/results_INVITE_CORE_1_K_425982_SCALE_60_REMOTE_CPU_2019.01.08-01.56.08/sipp_results/'
     #direct += '/results_CORES_2_K_DEFT_SCALE_43_2018.10.29-18.56.45/sipp_results/'
     #direct += '/results_CORES_3_K_DEFT_SCALE_64_2018.10.29-20.38.11/sipp_results/'
     #direct += '/results_CORES_4_K_DEFT_SCALE_86_2018.10.29-22.19.41/sipp_results/'
@@ -553,9 +563,9 @@ def main():
     #fname = 'sipp_raw_data_UFF_Perdue_04_23_reduced_1.csv'
     #fname = 'sipp_raw_data_UFF_Perdue_02_29_reduced_1.csv'
 
-    #fname = 'sipp_raw_data_UFF_Perdue_04_42_reduced_1.csv'
+    fname = 'sipp_raw_data_UFF_Perdue_04_42_reduced_1.csv'
 
-    fname = 'sipp_data_long_var_rate_0_1836_seconds_1.csv'
+    #fname = 'sipp_data_long_var_rate_0_1836_seconds_1.csv'
     
     
     
