@@ -72,6 +72,13 @@ class GenericQueue(nn.Module):
         print '**************************************************'
         print 'Number of parameters in the model = ', paramsCount
         print '**************************************************'
+        self.paramCount = paramsCount
+
+    def mus_2_str(self):
+        str_mus = ''
+        for i in range(self.paramCount):
+            str_mus += 'mu%d=%f '%(i,self.mu[i].item())
+        return str_mus
 
     def form_Q(self, inputLambda):
         if self.params['modelType'] == 'multipleMus':
@@ -693,7 +700,7 @@ def train(model=None,
             mu = model.mu.data
         print 'mu=',mu
         print '\tbest validLoss=', bestModel.validLoss, 'best trainLoss=', bestModel.trainLoss
-        print '\tbest mu=',bestModel.mu.data
+        print '\tbest mu=', [bestModel.mu[str(i)].data for i in range(1, bestModel.params['K'])]
         print
 
         torch.save(bestModel, bestModel.params['modelName'])
@@ -821,8 +828,8 @@ def run_using_MMmK_simulation():
 def run_using_real_data():
     random.seed(1111)
 
-    dir = '/Users/mohame11/Documents/myFiles/Career/Work/Purdue/PhD_courses/projects/queueing/results_24_2018.10.20-13.31.38_client_server/sipp_results/'
-    #dir = '/Users/mohame11/Documents/myFiles/Career/Work/Purdue/PhD_courses/projects/queueing/results_INVITE_CORE_1_K_425982_SCALE_60_REMOTE_CPU_2019.01.08-01.56.08/sipp_results/'
+    #dir = '/Users/mohame11/Documents/myFiles/Career/Work/Purdue/PhD_courses/projects/queueing/results_24_2018.10.20-13.31.38_client_server/sipp_results/'
+    dir = '/Users/mohame11/Documents/myFiles/Career/Work/Purdue/PhD_courses/projects/queueing/results_INVITE_CORE_1_K_425982_SCALE_60_REMOTE_CPU_2019.01.08-01.56.08/sipp_results/'
     # dir = '/Users/mohame11/Documents/myFiles/Career/Work/Purdue/PhD_courses/projects/queueing/results_CORES_4_K_DEFT_SCALE_86_2018.10.29-22.19.41/sipp_results/'
     # dir = '/Users/mohame11/Documents/myFiles/Career/Work/Purdue/PhD_courses/projects/queueing/results_CORES_2_K_100000_SCALE_43_2018.11.03-13.38.21/sipp_results/'
 
@@ -841,7 +848,7 @@ def run_using_real_data():
     trainQuota = 0.75
     validQuota = 0.25
 
-    data_X, data_Y = getTrainingData(dir, summaryFile, minDropRate=1, maxDropRate=10)
+    data_X, data_Y = getTrainingData(dir, summaryFile, minDropRate=1, maxDropRate=1e10)
 
     # shuffle data
     combined = list(zip(data_X, data_Y))
@@ -868,10 +875,10 @@ def run_using_real_data():
         'm': 3,
         'K': 5,
         'initialMu': 500.0,
-        'modelType': 'MMmK',  # 'MMmK', 'multipleMus'
-        'learningTechnique': 'pi',  # 'steps', 'pi', 'hybrid'
+        'modelType': 'allMus',  # 'MMmK', 'multipleMus', 'allMus'
+        'learningTechnique': 'steps',  # 'steps', 'pi', 'hybrid'
         'steadyStateIterPerSample': 1000,
-        'modelName': 'genericQueueModel_MMmK_K5_m5_pi',
+        'modelName': 'genericQueueModel_allMus_K5_m3',
         'dataLossType': 'NLL',  # NLL or  MSE
         'steadyStateLossType': 'L1',  # L1 or L2
         't': 3,
@@ -914,7 +921,7 @@ def run_using_real_data():
           epochs=1000,
           validLambdas=valid_X, validPKs=valid_Y,
           shuffleData=True,
-          showBatches=True
+          showBatches=False
           )
 
 
@@ -951,6 +958,6 @@ def test():
 
 if __name__ == "__main__":
     # test()
-    run_using_MMmK_simulation()
-    #run_using_real_data()
+    #run_using_MMmK_simulation()
+    run_using_real_data()
     print('DONE!')

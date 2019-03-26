@@ -13,13 +13,13 @@ import matplotlib.pyplot as plt
 import numpy as np
 #from learn_MMmK_slidingWin import *
 #from MMmK_LSTM import *
-from learn_MMmK_bernoulli import *
+#from learn_MMmK_bernoulli import *
 #from learn_genericQueue_fromData import *
 #from useGenericQueue_learn_MMmK_multipleMus import *
 
 #from Learning_Generic_Queue_MMmK import *
 #from Learning_Generic_Queue import *
-#from Learning_Generic_Queue_final import *
+from Learning_Generic_Queue_final import *
 #from Learning_Generic_Queue_final_customGradients import *
 from Learning_Generic_Queue_final_customGradients_autoDiff import *
 
@@ -375,7 +375,19 @@ class Tester(object):
         #fig.suptitle(self.fname, fontsize=12, fontweight='bold', horizontalalignment='center', y=.86)
         plt.grid()                                                                     
         #plt.savefig(resultsPath+'combined_rec_prec_plot_withActionSampling.pdf', bbox_inches='tight')
-        plt.show() 
+        plt.show()
+
+
+
+        plt.ylabel('#drops')
+        plt.xlabel('Time Interval(1 interval=' + str(interval) + ' s)')
+        lines = plt.plot(timeIntervals, [est_PKs[i]*drops[i] for i in range(len(est_PKs))], '--r', label='Estimated #drops')
+        plt.setp(lines, linewidth=2.0)
+        lines = plt.plot(timeIntervals, drops, 'b', label='Real #drops')
+        plt.setp(lines, linewidth=2.0)
+        plt.legend(loc=2, prop={'size': 17}, labelspacing=0.1)
+        plt.grid()
+        plt.show()
         
         
         #showing the input rate
@@ -519,7 +531,8 @@ def main():
 
     #modelName = 'MMmK_model_bernoullim0=5.0_K0=5.0_mu0=5.0'
 
-    modelName = 'genericQueueModel_embeddedMC_K5_realData_customGradient_250_08'
+    #modelName = 'genericQueueModel_multipleMus_K5_m5_pi'
+    modelName = 'embeddedMC_invite2'
 
 
     model = torch.load(modelName)
@@ -529,8 +542,8 @@ def main():
     #model.mu.data.clamp_(min = 660.3567, max = 660.3567)
     
     direct = '/Users/mohame11/Documents/myFiles/Career/Work/Purdue/PhD_courses/projects/queueing/'
-    direct += '/results_24_2018.10.20-13.31.38_client_server/sipp_results/'
-    #direct += '/results_INVITE_CORE_1_K_425982_SCALE_60_REMOTE_CPU_2019.01.08-01.56.08/sipp_results/'
+    #direct += '/results_24_2018.10.20-13.31.38_client_server/sipp_results/'
+    direct += '/results_INVITE_CORE_1_K_425982_SCALE_60_REMOTE_CPU_2019.01.08-01.56.08/sipp_results/'
     #direct += '/results_CORES_2_K_DEFT_SCALE_43_2018.10.29-18.56.45/sipp_results/'
     #direct += '/results_CORES_3_K_DEFT_SCALE_64_2018.10.29-20.38.11/sipp_results/'
     #direct += '/results_CORES_4_K_DEFT_SCALE_86_2018.10.29-22.19.41/sipp_results/'
@@ -563,9 +576,9 @@ def main():
     #fname = 'sipp_raw_data_UFF_Perdue_04_23_reduced_1.csv'
     #fname = 'sipp_raw_data_UFF_Perdue_02_29_reduced_1.csv'
 
-    fname = 'sipp_raw_data_UFF_Perdue_04_42_reduced_1.csv'
+    #fname = 'sipp_raw_data_UFF_Perdue_04_42_reduced_1.csv'
 
-    #fname = 'sipp_data_long_var_rate_0_1836_seconds_1.csv'
+    fname = 'sipp_data_long_var_rate_0_1836_seconds_1.csv'
     
     
     

@@ -35,24 +35,16 @@ class GenericQueue_customGradients(nn.Module):
         cntr = 0
         if params['modelType'] == 'MMmK':
             self.m = float(params['m'])
-            #self.mu = nn.Parameter(torch.DoubleTensor([params['initialMu']]), requires_grad=True)
             self.mus['0'] = nn.Parameter(torch.DoubleTensor([params['initialMu']]), requires_grad=True)
             self.paramId_2_muId[cntr] = '0'
-            
+
         elif params['modelType'] == 'muPerState': # MMmK with different mu per state
-            #mus = [params['initialMu']*(i+1) for i in range(self.params['K'] - 1)]
-            #self.mu = nn.Parameter(torch.FloatTensor(mus), requires_grad=True)
             for i in range(self.params['K'] - 1):
                 #self.mus[str(i)] = nn.Parameter(torch.DoubleTensor([params['initialMu']*(i+1)]), requires_grad=True)
                 self.mus[str(i)] = nn.Parameter(torch.DoubleTensor([params['initialMu']]), requires_grad=True)
-                #self.mus[str(0)] = nn.Parameter(torch.DoubleTensor([100.038091]), requires_grad=True)
-                #self.mus[str(1)] = nn.Parameter(torch.DoubleTensor([1119.217660]), requires_grad=True)
-                #self.mus[str(2)] = nn.Parameter(torch.DoubleTensor([3563.563729]), requires_grad=True)
-                #self.mus[str(3)] = nn.Parameter(torch.DoubleTensor([5747.597185 ]), requires_grad=True)
-                
                 self.paramId_2_muId[cntr] = str(i)
                 cntr += 1
-            
+
 
         elif params['modelType'] == 'embeddedMC': # each state has a different mu for all previous states
             for i in range(1, self.params['K']):
@@ -64,7 +56,7 @@ class GenericQueue_customGradients(nn.Module):
         self.optimiser = getattr(torch.optim, params['optim'])(self.parameters(), lr=params['lr'])
         if self.params['use_lr_scheduler']:
             self.scheduler = torch.optim.lr_scheduler.MultiStepLR(self.optimiser, milestones=[10,20,30,100,200,300,400,500], gamma=0.5)
-        
+
         paramsCount = 0
         for p in list(self.parameters()):
             if len(p.shape) == 1:
@@ -75,17 +67,17 @@ class GenericQueue_customGradients(nn.Module):
         print '**************************************************'
         print 'Number of parameters in the model = ', paramsCount
         self.paramCount = paramsCount
-        
+
     def mus_2_str(self):
         str_mus = ''
         for i in range(self.paramCount):
             str_mus += 'mu%d=%f '%(i,self.mus[self.paramId_2_muId[i]].item())
         return str_mus
-    
+
     def paramClip(self):
         for i in range(self.paramCount):
             self.mus[self.paramId_2_muId[i]].data.clamp_(min=1.0, max=1e20)
-            
+
 
 
     def form_Q(self, inputLambda):
@@ -156,7 +148,7 @@ class GenericQueue_customGradients(nn.Module):
                 self.Q[i][i] = -1*torch.sum(self.Q[i])
 
         return self.Q
-    
+
     def form_dQ_dmu(self):
         '''
         dQ = np.zeros((self.K, self.K))
@@ -178,7 +170,7 @@ class GenericQueue_customGradients(nn.Module):
                 dQ[i,i-1] = self.m
                 dQ[i,i] = -self.m
         return dQ
-    
+
     def form_dP_dmu2(self, P):
         #from torch.autograd import grad
         #dfdx, = grad(f(x_), x_, only_inputs=True, create_graph=True, retain_graph=False)
@@ -196,7 +188,7 @@ class GenericQueue_customGradients(nn.Module):
                 except:
                     pass
         return dP_dmus
-      
+
     def form_dP_dmu(self, P):
         #from torch.autograd import grad
         #dfdx, = grad(f(x_), x_, only_inputs=True, create_graph=True, retain_graph=False)
@@ -214,7 +206,7 @@ class GenericQueue_customGradients(nn.Module):
                 except:
                     pass
         return dP_dmus
-              
+
     def E_geometric(self, geo_p, P, dP_dmus, P_inf):
         x = scipy.stats.geom.rvs(geo_p)
         Pr_x = scipy.stats.geom.pmf(x, geo_p)
@@ -236,30 +228,31 @@ class GenericQueue_customGradients(nn.Module):
         expectn = torch.mul(expectn, Pr_x)
         limit_t_inf = torch.matmul(P_inf, expectn)
         return limit_t_inf
-    
+
     def E_geometric_infSplit(self, geo_p, P, dP_dmus, P_inf):
-        geo_p = self.params['geo_p']
+        #geo_p = self.params['geo_p']
         x = scipy.stats.geom.rvs(geo_p)
         Pr_x = scipy.stats.geom.pmf(x, geo_p)
         P_power_i_1 = torch.diag(torch.ones(self.params['K']))
+        
         expectn = torch.zeros((self.K, self.K))
         for i in range(1, x + 1):
             one_cdf_i = scipy.stats.geom.sf(i, geo_p)
             expectn = expectn + torch.div(P_power_i_1, one_cdf_i)
             if i+1 < x+1:
                 P_power_i_1 = torch.mm(P_power_i_1, P)
-            
+
         part1 = torch.matmul(P_inf, dP_dmus)
         part1 = torch.matmul(part1, expectn)
-        
+
         part2 = torch.matmul(expectn, dP_dmus)
         part2 = torch.matmul(part2, P_inf)
-        
+
         limit_t_inf = part1 + part2
         return limit_t_inf
-            
-            
-    
+
+
+
 
     def objective(self, inputLa, dropCount):
         Q = self.form_Q(inputLa)
@@ -271,31 +264,64 @@ class GenericQueue_customGradients(nn.Module):
             I = torch.diag(torch.ones(self.params['K']))
             gamma = torch.max(I * torch.abs(self.Q)) + self.c
             P = I + torch.div(self.Q, gamma)
-        
+
         Pprime = P.data.numpy() - np.eye(self.K, self.K)
         Pprime = np.concatenate((Pprime,np.ones((self.K,1))), axis = 1)
         b = np.zeros((1, self.K+1))
         b[-1][-1] = 1
         pi, residues, rank, s = np.linalg.lstsq(Pprime.T, b.T, rcond=None)
-        
+
         P_inf = torch.DoubleTensor(np.repeat(pi.T, self.K, axis=0))
-        
+
         PK = torch.DoubleTensor([pi[-1][-1]])  #g(H)
         PK = np.clip(PK, 1e-20, 1.0)
         dNLL = (-dropCount/PK) + (inputLa-dropCount)/(1-PK)
         dNLL = dNLL.double()
-        
+
         dg_dH = torch.zeros((self.K, self.K))
         #dg_dH[-1][-1] = 1.0
         dg_dH[:,self.K-1] = 1.0/self.K
         
-        dP_dmus = self.form_dP_dmu(P)
-        
+        dP_dmus = torch.zeros((self.paramCount, self.K, self.K))
+        if self.params['modelType'] == 'MMmK':
+            dQ_dmu = self.form_dQ_dmu()
+            dgamma_dmu = self.m
+            dP_dmus[0] = torch.div( (torch.mul(dQ_dmu, gamma) - torch.mul(Q, dgamma_dmu)) , (gamma ** 2) )
+        elif self.params['modelType'] == 'muPerState':
+            #maxMuId = max(self.mus, key=self.mus.get)
+            maxEntry = torch.argmax(I * torch.abs(self.Q))
+            maxMuId = (maxEntry.item() // self.K)-1
+            for i in range(self.paramCount):
+                if maxMuId == i:
+                    dP_dmus[i][0][0] = inputLa/(gamma**2)
+                    dP_dmus[i][0][1] = -inputLa/(gamma**2)
+                    for j in range(1, self.K):
+                        if j == i+1:
+                            dP_dmus[i][j][j-1] = (gamma - self.mus[self.paramId_2_muId[i]].item())/(gamma**2)
+                            dP_dmus[i][j][j]   = (-gamma + (self.mus[self.paramId_2_muId[i]].item()+inputLa))/(gamma**2)
+                            dP_dmus[i][j][j+1] = -inputLa/(gamma**2)
+                        elif j == self.K-1:
+                            dP_dmus[i][j][j-1] = -self.mus[self.paramId_2_muId[j-1]].item()/(gamma**2)
+                            dP_dmus[i][j][j]   = self.mus[self.paramId_2_muId[j-1]].item()/(gamma**2)
+                        else:
+                            dP_dmus[i][j][j-1] = -self.mus[self.paramId_2_muId[j-1]].item()/(gamma**2)
+                            dP_dmus[i][j][j]   = (self.mus[self.paramId_2_muId[j-1]].item()+inputLa)/(gamma**2)
+                            dP_dmus[i][j][j+1] = -inputLa/(gamma**2)
+                        #if j != self.K-1:
+                        #    dP_dmus[i][j][j+1] = -inputLa/(gamma**2)
+                else:
+                   dP_dmus[i][i+1][i] = 1.0/gamma
+                   dP_dmus[i][i+1][i+1] = -1.0/gamma
+        else:
+            pass
+
+        #dP_dmus = self.form_dP_dmu(P)
+
         if self.params['inf_split']:
             limit_t_inf = self.E_geometric_infSplit(self.params['geo_p'], P, dP_dmus, P_inf)
         else:
             limit_t_inf = self.E_geometric(self.params['geo_p'], P, dP_dmus, P_inf)
-        
+
         dLoss_dmus = dNLL.item() * torch.sum(dg_dH * limit_t_inf, (1,2))
 
         try:
@@ -303,11 +329,11 @@ class GenericQueue_customGradients(nn.Module):
         except:
             print PK
             exit(1)
-        
+
         return loss, torch.log(PK), dLoss_dmus
-        
-        
-        
+
+
+
 
 
     def predict(self, inputLa, clampNumbers=False):
@@ -321,7 +347,7 @@ class GenericQueue_customGradients(nn.Module):
             I = torch.diag(torch.ones(self.params['K']))
             gamma = torch.max(I * torch.abs(self.Q)) + self.c
             P = torch.diag(torch.ones(self.params['K'])) + torch.div(self.Q, gamma)
-        
+
         Pprime = P.data.numpy() - np.eye(self.K, self.K)
         Pprime = np.concatenate((Pprime,np.ones((self.K,1))), axis = 1)
         b = np.zeros((1, self.K+1))
@@ -470,7 +496,7 @@ def train(model=None,
         true_PKs = []
         gradient = 0.0
         for b in range(len(inputLambdas)):
-            
+
             #if b == 100:
             #    exit(1)
 
@@ -483,7 +509,7 @@ def train(model=None,
 
 
             loss, logPK, dLoss_dmu = model.objective(inputLa, dropCount)
-            
+
             gradient += dLoss_dmu.data.numpy()
 
             est_PKs.append(torch.exp(logPK).item())
@@ -512,7 +538,7 @@ def train(model=None,
                        if p.grad is not None:
                            p.grad.detach()
                            p.grad.zero_()
-                
+
                 #model.optimiser.zero_grad()
                 model.paramClip()
 
@@ -537,8 +563,8 @@ def train(model=None,
         model.validLoss = validLoss
         model.trainLoss = epochLoss / float(len(inputLambdas))
 
-        
-        
+
+
         print 'Epoch ',e, '--------------------------------------'
         for param_group in model.optimiser.param_groups:
             print 'lr=', param_group['lr'],
@@ -546,8 +572,8 @@ def train(model=None,
         print 'MSE=', MSE.item()
         print 'validLoss=', validLoss
         print 'mus=',model.mus_2_str()
-        
-        
+
+
         if validLoss < bestValidLoss:
             bestValidLoss = validLoss
             torch.save(model, model.params['modelName'])
@@ -561,9 +587,9 @@ def train(model=None,
         print
 
         torch.save(bestModel, bestModel.params['modelName'])
-        
-            
-        
+
+
+
 
 
 def run_using_MMmK_simulation():
@@ -572,13 +598,13 @@ def run_using_MMmK_simulation():
     true_m = 3
     true_K = 5
     true_mu = 50.0
-    
-    
+
+
     singleValue = 500
 
     maxLambda = 1000
     inputDataSize = 1
-    
+
 
     train_X = list(range(1, maxLambda, 10))
     # train_X = list(range(10, 1000, 2))
@@ -606,12 +632,12 @@ def run_using_MMmK_simulation():
         'cuda': False,
         'm': true_m,
         'K': true_K,
-        'c': 0.001,           #uniformization const.
+        'c': 0.001,     #uniformization const.
         'geo_p': 0.5,
         'inf_split': True,
         'initialMu': 35.0,
         'modelType': 'muPerState',  # 'MMmK', 'muPerState', 'embeddedMC'
-        'modelName': 'MMmK_simulatedData_k100',
+        'modelName': 'muPerState_simulatedDataK5',
         'optim': 'Adam',
         'lr': 0.1,
         'use_lr_scheduler': False,
@@ -644,7 +670,7 @@ def run_using_MMmK_simulation():
           epochs=10000,
           validLambdas=valid_X, validPKs=valid_Y,
           shuffleData=False,
-          showBatches=False,
+          showBatches=True,
           useDropRate = False
           )
 
@@ -703,13 +729,13 @@ def run_using_real_data():
     params = {
         'cuda': False,
         'm': 3,
-        'K': 5,
+        'K': 50,
         'c': 0.001,           #uniformization const.
-        'geo_p': 0.95,
+        'geo_p': 0.5,
         'inf_split': True,
-        'initialMu': 2000.0,
-        'modelType': 'embeddedMC',  # 'MMmK', 'muPerState', 'embeddedMC'
-        'modelName': 'asd',
+        'initialMu': 200.0,
+        'modelType': 'muPerState',  # 'MMmK', 'muPerState', 'embeddedMC'
+        'modelName': 'muPerState',
         'optim': 'Adam',
         'lr': 10.0,
         'use_lr_scheduler': True,
@@ -753,8 +779,8 @@ if __name__ == "__main__":
     np.random.seed(1111)
     random.seed(1111)
     # test()
-    run_using_MMmK_simulation()
+    #run_using_MMmK_simulation()
     #import cProfile
     #cProfile.run('run_using_real_data()')
-    #run_using_real_data()
+    run_using_real_data()
     print('DONE!')
