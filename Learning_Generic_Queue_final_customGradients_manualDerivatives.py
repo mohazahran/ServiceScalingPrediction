@@ -733,7 +733,7 @@ def run_using_real_data():
         'c': 0.001,           #uniformization const.
         'geo_p': 0.5,
         'inf_split': True,
-        'initialMu': 200.0,
+        'initialMu': 10.0,
         'modelType': 'muPerState',  # 'MMmK', 'muPerState', 'embeddedMC'
         'modelName': 'muPerState',
         'optim': 'Adam',
@@ -741,8 +741,11 @@ def run_using_real_data():
         'use_lr_scheduler': True,
         'gradientClip': 25.0  # for exploding gradients
     }
-
+    
+    logPath = params['modelName']+'_log'
+    sys.stdout.log = open(logPath, "a")
     print 'Parameters:\n', params
+    
 
     # print torch.__version__
 
