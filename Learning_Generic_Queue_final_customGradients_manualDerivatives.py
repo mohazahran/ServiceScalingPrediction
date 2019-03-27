@@ -746,7 +746,6 @@ def run_using_real_data():
     sys.stdout.log = open(logPath, "a")
     print 'Parameters:\n', params
     
-
     # print torch.__version__
 
     # print torch.version.cuda
