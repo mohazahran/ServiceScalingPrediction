@@ -17,6 +17,7 @@ import solver
 import numpy as np
 import scipy.stats
 import matplotlib as mpl
+from Logger import Logger
 
 mpl.use('TkAgg')
 import matplotlib.pyplot as plt
@@ -40,8 +41,8 @@ class GenericQueue_customGradients(nn.Module):
 
         elif params['modelType'] == 'muPerState': # MMmK with different mu per state
             for i in range(self.params['K'] - 1):
-                #self.mus[str(i)] = nn.Parameter(torch.DoubleTensor([params['initialMu']*(i+1)]), requires_grad=True)
-                self.mus[str(i)] = nn.Parameter(torch.DoubleTensor([params['initialMu']]), requires_grad=True)
+                self.mus[str(i)] = nn.Parameter(torch.DoubleTensor([params['initialMu']*(i+1)]), requires_grad=True)
+                #self.mus[str(i)] = nn.Parameter(torch.DoubleTensor([params['initialMu']]), requires_grad=True)
                 self.paramId_2_muId[cntr] = str(i)
                 cntr += 1
 
@@ -55,7 +56,7 @@ class GenericQueue_customGradients(nn.Module):
 
         self.optimiser = getattr(torch.optim, params['optim'])(self.parameters(), lr=params['lr'])
         if self.params['use_lr_scheduler']:
-            self.scheduler = torch.optim.lr_scheduler.MultiStepLR(self.optimiser, milestones=[10,20,30,100,200,300,400,500], gamma=0.5)
+            self.scheduler = torch.optim.lr_scheduler.MultiStepLR(self.optimiser, milestones=[50,100,500,1000], gamma=0.5)
 
         paramsCount = 0
         for p in list(self.parameters()):
@@ -296,10 +297,14 @@ class GenericQueue_customGradients(nn.Module):
                     dP_dmus[i][0][0] = inputLa/(gamma**2)
                     dP_dmus[i][0][1] = -inputLa/(gamma**2)
                     for j in range(1, self.K):
-                        if j == i+1:
+                        if j == i+1: #row at the max mu
                             dP_dmus[i][j][j-1] = (gamma - self.mus[self.paramId_2_muId[i]].item())/(gamma**2)
                             dP_dmus[i][j][j]   = (-gamma + (self.mus[self.paramId_2_muId[i]].item()+inputLa))/(gamma**2)
-                            dP_dmus[i][j][j+1] = -inputLa/(gamma**2)
+                            #print i,j
+                            if i == self.paramCount-1:
+                                pass
+                            else:
+                                dP_dmus[i][j][j+1] = -inputLa/(gamma**2)
                         elif j == self.K-1:
                             dP_dmus[i][j][j-1] = -self.mus[self.paramId_2_muId[j-1]].item()/(gamma**2)
                             dP_dmus[i][j][j]   = self.mus[self.paramId_2_muId[j-1]].item()/(gamma**2)
@@ -314,6 +319,8 @@ class GenericQueue_customGradients(nn.Module):
                    dP_dmus[i][i+1][i+1] = -1.0/gamma
         else:
             pass
+            
+        
 
         #dP_dmus = self.form_dP_dmu(P)
 
@@ -400,6 +407,58 @@ def getTrainingData(dir, summaryFile, minDropRate, maxDropRate, useDropRate):
             train_Y.append(Variable(torch.DoubleTensor([PK])))
 
     return train_X, train_Y
+
+def getTrainingData_withFilter(dir, summaryFile, minDropRate, maxDropRate, useDropRate):
+    sfile = dir + summaryFile
+    inputPacketsCols = ['CallRate(P)']
+    droppedPacketsCols = ['FailedCall(P)']
+
+    df = pd.read_csv(sfile, usecols=['Rate File', ' Failed Calls'])
+    df.fillna(0, inplace=True)
+    train_X = []
+    train_Y = []
+    for i, row in df.iterrows():
+        if row[' Failed Calls'] < 1:
+            continue
+        fname = 'sipp_data_' + row['Rate File'] + '_1.csv'
+        if fname == 'sipp_data_long_var_rate_0_1836_seconds_1.csv':
+            continue
+        simulationFile = dir + fname  # sipp_data_UFF_Perdue_01_1_reduced_1.csv     UFF_Perdue_01_12_reduced
+
+        curr_df = pd.read_csv(simulationFile, usecols=inputPacketsCols + droppedPacketsCols)
+        curr_df.fillna(0, inplace=True)  # replace missing values (NaN) to zero9
+        for j, curr_row in curr_df.iterrows():
+            try:
+                the_lambda = float(curr_row['CallRate(P)'])
+                failed = float(curr_row['FailedCall(P)'])
+                if failed > the_lambda or the_lambda <= 0:
+                    continue
+                if useDropRate:
+                    PK = failed
+                else:
+                    PK = failed / the_lambda
+            except:
+                continue
+            train_X.append(Variable(torch.DoubleTensor([the_lambda])))
+            train_Y.append(Variable(torch.DoubleTensor([PK])))
+    
+    combined = list(zip(train_X, train_Y))
+    random.shuffle(combined)
+    train_X[:], train_Y[:] = zip(*combined)
+    
+    currDrops = 0
+    X = []
+    Y = []
+    it = 0
+    while currDrops < maxDropRate:
+        currDrops += train_Y[it].item()
+        X.append(train_X[it])
+        Y.append(train_Y[it])
+        it += 1
+        
+    
+
+    return X, Y
 
 
 def evaluate_given_model(testModel, testLambdas, testPKs, useDropRate = True, plotFig=True):
@@ -704,7 +763,7 @@ def run_using_real_data():
     validQuota = 0.25
     useDropRate = True
 
-    data_X, data_Y = getTrainingData(dir, summaryFile, minDropRate=1, maxDropRate=1e10, useDropRate = True)
+    data_X, data_Y = getTrainingData_withFilter(dir, summaryFile, minDropRate=1, maxDropRate=2500, useDropRate = True)
 
     # shuffle data
     combined = list(zip(data_X, data_Y))
@@ -714,8 +773,6 @@ def run_using_real_data():
     trainLen = int(trainQuota * len(data_X))
     validLen = int(validQuota * len(data_X))
 
-    print 'trainLen=', trainLen, 'validLen=', validLen
-
     train_X = data_X[:trainLen]
     train_Y = data_Y[:trainLen]
 
@@ -724,24 +781,28 @@ def run_using_real_data():
 
     test_X = data_X[trainLen + validLen:]
     test_Y = data_Y[trainLen + validLen:]
+    
+    print 'trainLen=', trainLen, 'validLen=', validLen
+    print '#train drops=', sum(train_Y), '#valid drops=', sum(valid_Y)
 
     ########################################
     params = {
         'cuda': False,
         'm': 3,
-        'K': 50,
+        'K': 10,
         'c': 0.001,           #uniformization const.
         'geo_p': 0.5,
         'inf_split': True,
         'initialMu': 10.0,
         'modelType': 'muPerState',  # 'MMmK', 'muPerState', 'embeddedMC'
-        'modelName': 'muPerState',
+        'modelName': 'realData2_muPerState_lowDrops2500',
         'optim': 'Adam',
         'lr': 10.0,
         'use_lr_scheduler': True,
         'gradientClip': 25.0  # for exploding gradients
     }
     
+    sys.stdout = Logger()
     logPath = params['modelName']+'_log'
     sys.stdout.log = open(logPath, "a")
     print 'Parameters:\n', params
@@ -759,6 +820,10 @@ def run_using_real_data():
         torch.manual_seed(1111)
 
     model = GenericQueue_customGradients(params)
+    
+    #model = torch.load('muPerState')
+    #model.params['lr'] = 10.0
+    #model.train()
 
     if params['cuda'] == True:
         model.cuda()
@@ -771,7 +836,7 @@ def run_using_real_data():
           epochs=5000,
           validLambdas=valid_X, validPKs=valid_Y,
           shuffleData=True,
-          showBatches=True,
+          showBatches=False,
           useDropRate = True
           )
 

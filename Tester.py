@@ -21,7 +21,8 @@ import numpy as np
 #from Learning_Generic_Queue import *
 from Learning_Generic_Queue_final import *
 #from Learning_Generic_Queue_final_customGradients import *
-from Learning_Generic_Queue_final_customGradients_autoDiff import *
+#from Learning_Generic_Queue_final_customGradients_autoDiff import *
+from Learning_Generic_Queue_final_customGradients_manualDerivatives import *
 
 class Tester(object):
     '''
@@ -248,7 +249,7 @@ class Tester(object):
         MSE = 0
         NLL = 0
         intervalCount = 0
-        print 'time_interval empirical_PK estimated_PK squareLoss'
+        print 'intervalCount my_lambda, empirical_PK, estimated_PK, realDrops, estDrops'
         est_PKs = []
         emp_PKs = []
         my_lambdas = []
@@ -312,7 +313,7 @@ class Tester(object):
                 MSE += squaredLoss
 
                 
-                print intervalCount, empirical_PK, estimated_PK, squaredLoss
+                print intervalCount, my_lambda, empirical_PK, estimated_PK, avgDroppedPackets, estimated_PK*my_lambda
                 
                 totalInputPackets = 0
                 totalDroppedPackets = 0
@@ -381,7 +382,7 @@ class Tester(object):
 
         plt.ylabel('#drops')
         plt.xlabel('Time Interval(1 interval=' + str(interval) + ' s)')
-        lines = plt.plot(timeIntervals, [est_PKs[i]*drops[i] for i in range(len(est_PKs))], '--r', label='Estimated #drops')
+        lines = plt.plot(timeIntervals, [est_PKs[i]*my_lambdas[i] for i in range(len(est_PKs))], '--r', label='Estimated #drops')
         plt.setp(lines, linewidth=2.0)
         lines = plt.plot(timeIntervals, drops, 'b', label='Real #drops')
         plt.setp(lines, linewidth=2.0)
@@ -532,7 +533,7 @@ def main():
     #modelName = 'MMmK_model_bernoullim0=5.0_K0=5.0_mu0=5.0'
 
     #modelName = 'genericQueueModel_multipleMus_K5_m5_pi'
-    modelName = 'embeddedMC_invite2'
+    modelName = 'muPerState'
 
 
     model = torch.load(modelName)
