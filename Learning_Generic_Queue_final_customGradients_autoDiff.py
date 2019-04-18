@@ -43,8 +43,8 @@ class GenericQueue_customGradients(nn.Module):
             #mus = [params['initialMu']*(i+1) for i in range(self.params['K'] - 1)]
             #self.mu = nn.Parameter(torch.FloatTensor(mus), requires_grad=True)
             for i in range(self.params['K'] - 1):
-                #self.mus[str(i)] = nn.Parameter(torch.DoubleTensor([params['initialMu']*(i+1)]), requires_grad=True)
-                self.mus[str(i)] = nn.Parameter(torch.DoubleTensor([params['initialMu']]), requires_grad=True)
+                self.mus[str(i)] = nn.Parameter(torch.DoubleTensor([params['initialMu']*(i+1)]), requires_grad=True)
+                #self.mus[str(i)] = nn.Parameter(torch.DoubleTensor([params['initialMu']]), requires_grad=True)
                 #self.mus[str(0)] = nn.Parameter(torch.DoubleTensor([100.038091]), requires_grad=True)
                 #self.mus[str(1)] = nn.Parameter(torch.DoubleTensor([1119.217660]), requires_grad=True)
                 #self.mus[str(2)] = nn.Parameter(torch.DoubleTensor([3563.563729]), requires_grad=True)
@@ -387,7 +387,7 @@ def evaluate_given_model(testModel, testLambdas, testPKs, useDropRate = True, pl
         # logPK = math.log(est_PK)
         est_PKs.append(est_PK)
         if not useDropRate:
-            actualDrops = float(math.ceil(testPKs[i] * testLambdas[i]))
+            actualDrops = float(math.floor(testPKs[i] * testLambdas[i]))
         else:
             actualDrops = testPKs[i]
         NLL = - (actualDrops * logPK + (testLambdas[i] - actualDrops) * math.log(1 - math.exp(logPK)))
@@ -477,7 +477,7 @@ def train(model=None,
             inputLa = inputLambdas[b]
             if not useDropRate:
                 dropProb = PKs[b]
-                dropCount = float(math.ceil(dropProb * inputLa))
+                dropCount = float(math.floor(dropProb * inputLa))
             else:
                 dropCount = PKs[b]
 
@@ -574,7 +574,7 @@ def run_using_MMmK_simulation():
     true_mu = 50.0
     
     
-    singleValue = 500
+    singleValue = 75
 
     maxLambda = 1000
     inputDataSize = 1
@@ -589,7 +589,7 @@ def run_using_MMmK_simulation():
 
     train_Y = [math.exp(solver.M_M_m_K_log(float(inp) / float(true_mu), true_m, true_K)) for inp in train_X]
 
-    drops = [math.ceil(train_X[i] * train_Y[i]) for i in range(len(train_X))]
+    drops = [math.floor(train_X[i] * train_Y[i]) for i in range(len(train_X))]
 
     print '#drops=', drops, train_Y
     #exit(1)
@@ -609,8 +609,8 @@ def run_using_MMmK_simulation():
         'c': 0.001,           #uniformization const.
         'geo_p': 0.5,
         'inf_split': True,
-        'initialMu': 35.0,
-        'modelType': 'muPerState',  # 'MMmK', 'muPerState', 'embeddedMC'
+        'initialMu': 10.0,
+        'modelType': 'MMmK',  # 'MMmK', 'muPerState', 'embeddedMC'
         'modelName': 'MMmK_simulatedData_k100',
         'optim': 'Adam',
         'lr': 0.1,

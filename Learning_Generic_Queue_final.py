@@ -644,7 +644,7 @@ def train(model=None,
 
             inputLa = inputLambdas[b]
             dropProb = PKs[b]
-            dropCount = float(math.ceil(dropProb * inputLa))
+            dropCount = float(math.floor(dropProb * inputLa))
 
             loss, logPK = model.objective(inputLa, dropCount, dropProb)
 
@@ -700,7 +700,8 @@ def train(model=None,
             mu = model.mu.data
         print 'mu=',mu
         print '\tbest validLoss=', bestModel.validLoss, 'best trainLoss=', bestModel.trainLoss
-        print '\tbest mu=', [bestModel.mu[str(i)].data for i in range(1, bestModel.params['K'])]
+        print '\tbest mu=', bestModel.mu.data
+        #print '\tbest mu=', [bestModel.mu[str(i)].data for i in range(1, bestModel.params['K'])]
         print
 
         torch.save(bestModel, bestModel.params['modelName'])
@@ -721,20 +722,22 @@ def run_using_MMmK_simulation():
     random.shuffle(train_X)
     # train_X = train_X[:inputDataSize]
 
-    singleValue = 600
+    singleValue = 75
 
-    train_X = [singleValue]
+    #train_X = [singleValue]
+    train_X = [singleValue]+[i for i in range(2,50)]
 
     train_Y = [math.exp(solver.M_M_m_K_log(float(inp) / float(true_mu), true_m, true_K)) for inp in train_X]
 
-    drops = [math.ceil(train_X[i] * train_Y[i]) for i in range(len(train_X))]
+    drops = [math.floor(train_X[i] * train_Y[i]) for i in range(len(train_X))]
 
     print '#drops=', drops, train_Y
     #exit(1)
     valid_X = list(range(1, maxLambda, 7))
     # valid_X = list(range(5, 1000, 7))
     random.shuffle(valid_X)
-    valid_X = [singleValue]
+    #valid_X = [singleValue]
+    valid_X = train_X
     #valid_X = valid_X[:inputDataSize]
     valid_Y = [math.exp(solver.M_M_m_K_log(float(inp) / float(true_mu), true_m, true_K)) for inp in valid_X]
 
@@ -744,8 +747,8 @@ def run_using_MMmK_simulation():
         'cuda': False,
         'm': true_m,
         'K': true_K,
-        'initialMu': 20.0,
-        'modelType': 'multipleMus',  # 'MMmK', 'multipleMus'
+        'initialMu': 15.0,
+        'modelType': 'MMmK',  # 'MMmK', 'multipleMus'
         'learningTechnique': 'steps',  # 'steps', 'pi', 'hybrid'
         'steadyStateIterPerSample': 1000,
         'modelName': 'genericQueueModel_MMmK_K5_m3_simulatedData_la75_pi',
@@ -958,6 +961,6 @@ def test():
 
 if __name__ == "__main__":
     # test()
-    #run_using_MMmK_simulation()
-    run_using_real_data()
+    run_using_MMmK_simulation()
+    #run_using_real_data()
     print('DONE!')

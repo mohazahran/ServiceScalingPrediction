@@ -350,9 +350,9 @@ class Tester(object):
         #drawing est PK vs. emp PK
         plt.ylabel('Probability')
         plt.xlabel('Time Interval(1 interval=' +str(interval)+' s)')
-        lines = plt.plot(timeIntervals, est_PKs, '--r' ,label='Estimated PK') 
+        lines = plt.plot(timeIntervals, est_PKs, '--r' ,label='Estimated drop probability')
         plt.setp(lines, linewidth=2.0)
-        lines = plt.plot(timeIntervals, emp_PKs, 'b' ,label='Empirical PK') 
+        lines = plt.plot(timeIntervals, emp_PKs, 'b' ,label='Empirical drop probability')
         plt.setp(lines, linewidth=2.0)
         
         '''
@@ -533,7 +533,7 @@ def main():
     #modelName = 'MMmK_model_bernoullim0=5.0_K0=5.0_mu0=5.0'
 
     #modelName = 'genericQueueModel_multipleMus_K5_m5_pi'
-    modelName = 'muPerState'
+    modelName = 'realData2_muPerState_lowDrops2500_K5'
 
 
     model = torch.load(modelName)

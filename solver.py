@@ -9,6 +9,36 @@ from scipy.optimize import *
 import random
 
 
+def bith_death_closedForm(lambdas, mus, k):
+    '''
+    lambdas: ids 0->K-1
+    mus: ids 1->K
+    '''
+    K = len(mus)
+    
+    sumRhos = 0.0
+    for j in range(1, k):
+        rhos = 1.0
+        for i in range(j):
+            rhos *= lambdas[i]/mus[i]
+        sumRhos += rhos
+            
+    
+    
+    p0 = 1.0/(1.0+sumRhos)
+    
+    lambdasProd = 1.0
+    musProd = 1.0
+    
+    for i in range(k):
+        lambdasProd *= lambdas[i]
+        musProd *= mus[i]
+        
+    
+    pk = (lambdasProd/musProd)*p0
+    return pk
+
+
 def M_M_m_K_simulation(la, mu, m, K, steps):
     x = 0  # current state (#of alive requests)
     states = [str(x)]
