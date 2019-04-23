@@ -291,6 +291,18 @@ class GenericQueue_customGradients(nn.Module):
             P_pow_k_1 = torch.mm(P_pow_k_1, P) 
         return res
 
+    def no_russian_roulette_infSplit(self, P, dP_dmus, P_inf):
+        I = torch.diag(torch.ones(self.params['K']))
+        inv = torch.inverse(I - P)
+        part1 = torch.matmul(P_inf, dP_dmus)
+        part1 = torch.matmul(part1, inv)
+
+        part2 = torch.matmul(inv, dP_dmus)
+        part2 = torch.matmul(part2, P_inf)
+
+        return part1+part2
+
+
     def matrixPower(self, P, t):
         c = math.floor( math.log(math.log(t)/math.log(2)) / math.log(2) )
         if c > 0:
@@ -317,7 +329,7 @@ class GenericQueue_customGradients(nn.Module):
             P = I + torch.div(self.Q, gamma)
             
         
-        if self.params['russian_roulette'] == False:
+        if self.params['russian_roulette'] == False and self.params['inf_split'] == False:
             #P_t = P
             #for i in range(self.params['no_russian_roulette_t']):
             #   P_t = torch.mm(P_t, P)
@@ -379,14 +391,18 @@ class GenericQueue_customGradients(nn.Module):
         print 'mu=%f Geo_p=%f avgGrad=%f var=%f' % (self.mu.item(), self.params['geo_p'], avgGrad, varGrad) 
         #print self.mu.item(), self.params['geo_p'], avgGrad, varGrad
         '''
-        
-        if self.params['russian_roulette'] == False:
-            limit_t_inf = self.calGradient_without_russian_roulette(P, dP_dmus, t=self.params['no_russian_roulette_t'])
-        else:
+
+        if self.params['russian_roulette'] == True:
             if self.params['inf_split']:
                 limit_t_inf = self.E_geometric_infSplit(self.params['geo_p'], P, dP_dmus, P_inf)
             else:
                 limit_t_inf = self.E_geometric(self.params['geo_p'], P, dP_dmus, P_inf)
+        elif self.params['russian_roulette'] == False:
+            if self.params['inf_split']:
+                limit_t_inf = self.no_russian_roulette_infSplit(P, dP_dmus, P_inf)
+            else:
+                limit_t_inf = self.calGradient_without_russian_roulette(P, dP_dmus, t=self.params['no_russian_roulette_t'])
+
 
         dLoss_dmus = dNLL.item() * torch.sum(dg_dH * limit_t_inf, (1,2))
 
@@ -789,8 +805,8 @@ def run_using_MMmK_simulation():
         'K': true_K,
         'c': 0.001,     #uniformization const.
         'geo_p': 0.1,
-        'inf_split': False,
-        'russian_roulette': True,
+        'inf_split': True,
+        'russian_roulette': False,
         'no_russian_roulette_t': 100,
         'initialMu': 15.0,
         'modelType': 'MMmK',  # 'MMmK', 'muPerState', 'embeddedMC'

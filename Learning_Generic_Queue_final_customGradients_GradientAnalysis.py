@@ -318,6 +318,17 @@ class GenericQueue_customGradients(nn.Module):
         for j in range(int(t-currPow)):
             Pt = torch.mm(Pt, P)
         return Pt
+    
+    def no_russian_roulette_infSplit(self, P, dP_dmus, P_inf):
+        I = torch.diag(torch.ones(self.params['K']))
+        inv = torch.inverse(I - P)
+        part1 = torch.matmul(P_inf, dP_dmus)
+        part1 = torch.matmul(part1, inv)
+
+        part2 = torch.matmul(inv, dP_dmus)
+        part2 = torch.matmul(part2, P_inf)
+
+        return part1+part2
 
 
     def objective(self, inputLa, dropCount):
@@ -331,7 +342,7 @@ class GenericQueue_customGradients(nn.Module):
             gamma = torch.max(I * torch.abs(self.Q)) + self.c
             P = I + torch.div(self.Q, gamma)
 
-        if self.params['russian_roulette'] == False:
+        if self.params['russian_roulette'] == False and self.params['inf_split'] == False:
             P_t = self.matrixPower(P, self.params['no_russian_roulette_t'])
             PK = sum(P_t[:,-1])/float(self.K)
         else:
@@ -385,13 +396,16 @@ class GenericQueue_customGradients(nn.Module):
             iters = 1
         grads = []
         for j in range(iters):
-            if self.params['russian_roulette'] == False:
-                limit_t_inf = self.calGradient_without_russian_roulette(P, dP_dmus, t=self.params['no_russian_roulette_t'])
-            else:
+            if self.params['russian_roulette'] == True:
                 if self.params['inf_split']:
                     limit_t_inf = self.E_geometric_infSplit(self.params['geo_p'], P, dP_dmus, P_inf)
                 else:
                     limit_t_inf = self.E_geometric(self.params['geo_p'], P, dP_dmus, P_inf)
+            elif self.params['russian_roulette'] == False:
+                if self.params['inf_split']:
+                    limit_t_inf = self.no_russian_roulette_infSplit(P, dP_dmus, P_inf)
+                else:
+                    limit_t_inf = self.calGradient_without_russian_roulette(P, dP_dmus, t=self.params['no_russian_roulette_t'])
 
             dLoss_dmus = dNLL.item() * torch.sum(dg_dH * limit_t_inf, (1,2))
 
@@ -762,21 +776,21 @@ def run_using_MMmK_simulation():
     sampleCount = 50
     '''
     
-    '''
+    
     true_m = 4
     true_K = 250
     true_mu = 25.0 
     singleValue = 125   
     sampleCount = 10
-    '''
-        
     
+        
+    '''
     true_m = 3
     true_K = 5
     true_mu = 50.0 
     singleValue = 100
     sampleCount = 10
-    
+    '''
     
     '''
     true_m = 50
@@ -785,6 +799,7 @@ def run_using_MMmK_simulation():
     singleValue = 1200   
     sampleCount = 10
     '''
+    
     
     
 
@@ -820,11 +835,11 @@ def run_using_MMmK_simulation():
         'geo_p': 0.95,
         'X' : None ,  #X=None would turn that option off
         'inf_split': True,
-        'russian_roulette': True,
+        'russian_roulette': False,
         'no_russian_roulette_t': 10,
-        'initialMu': 25.0,
+        'initialMu': 15.0,
         'modelType': 'MMmK',  # 'MMmK', 'muPerState', 'embeddedMC'
-        'modelName': 'M_M_m_3_K_5_mu_50_la_100_IL_pgeo_095_infSplit',
+        'modelName': 'M_M_m_4_K_250_mu_25_la_125_IL_infSplit_noRR',
         'optim': 'Adam',
         'lr': 0.1,
         'use_lr_scheduler': False,
@@ -862,7 +877,7 @@ def run_using_MMmK_simulation():
     train(model=model,
           inputLambdas=train_X, PKs=train_Y,
           batchSize=1,
-          epochs=300,
+          epochs=50,
           validLambdas=valid_X, validPKs=valid_Y,
           shuffleData=False,
           showBatches=True,
