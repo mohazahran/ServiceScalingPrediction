@@ -1141,25 +1141,29 @@ class Task1(WithRandom):
         # fit parameters
         self.best_loss, self.best_params = None, None
         for epc in range(1, num_epochs + 1):
-            # shuffle data
-            dind = np.random.permutation(len(self.data))
+            try:
+                # shuffle data
+                dind = np.random.permutation(len(self.data))
+        
+                # train
+                getattr(self, "_{}_ffbp".format(self.ptype))(dind)
+        
+                # evaluate
+                loss_tr = self.eval_train()
+                loss_te = self.eval_test()
+                self.loss_lst_tr.append(loss_tr)
+                self.loss_lst_te.append(loss_te)
+                print(fmt.format(epc, loss_tr, loss_te))
     
-            # train
-            getattr(self, "_{}_ffbp".format(self.ptype))(dind)
-    
-            # evaluate
-            loss_tr = self.eval_train()
-            loss_te = self.eval_test()
-            self.loss_lst_tr.append(loss_tr)
-            self.loss_lst_te.append(loss_te)
-            print(fmt.format(epc, loss_tr, loss_te))
-
-            # update best parameters
-            if self.best_loss is None or loss_te < self.best_loss:
-                self.best_loss = loss_te
-                self.best_params = copy.deepcopy(self.layers.state_dict())
-            else:
-                pass
+                # update best parameters
+                if self.best_loss is None or loss_te < self.best_loss:
+                    self.best_loss = loss_te
+                    self.best_params = copy.deepcopy(self.layers.state_dict())
+                else:
+                    pass
+            except Exception as err:
+                print(err)
+                break
         torch.save((self.loss_lst_tr, self.loss_lst_te), "{}_loss_lst.pt".format(name))
 
         # visualize training curve
