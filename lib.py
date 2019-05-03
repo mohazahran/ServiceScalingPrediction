@@ -3,7 +3,7 @@ import scipy.stats as stats
 import torch
 import re
 import copy
-import matplotlib.pyplot as plt
+import itertools
 
 
 r"""
@@ -155,11 +155,9 @@ def _zero_tridiag(mx):
 r"""
 Autograd
 ========
-- **GenericSteadyDist**    : Differentiable steady state distribution function for generic queue process
-- **BirthDeathSteadyDist** : Differentiable steady state distribution function for birth-death process
-- **BirthDeathMat**        : Differentiable construction function for birth-death process matrix
-- **BirthDeathShareVec**   : Differentiable construction function for parameter sharing birth-death vector
-- **DropCountLoss**        : Differentiable loss function for drop count NLL
+- **GenericSteadyDist**  : Differentiable steady state distribution function for generic queue process
+- **BirthDeathMat**      : Differentiable construction function for birth-death process matrix
+- **BirthDeathShareVec** : Differentiable construction function for parameter sharing birth-death vector
 """
 
 
@@ -426,127 +424,6 @@ class GenericSteadyDist(torch.autograd.Function):
         return grad
 
 
-class BirthDeathSteadyDist(GenericSteadyDist):
-    r"""Differentiable steady state distribution function for (birth)-death process"""
-    @staticmethod
-    def forward(ctx, bvec, dvec, ind=None, c=0.001, vmin=1e-20, vmax=1, solver=_numpy_solve):
-        r"""Forwarding
-
-        Args
-        ----
-        bvec : torch.Tensor
-            Birth vector.
-        dvec : torch.Tensor
-            Death vector.
-        ind : None or int or [int, ...]
-            Specify the indices to select.
-        c : float
-            Uniform normalization offset.
-        vmin : float
-            Lower bound of output dimensions.
-        vmax : float
-            Upper bound of output dimensions.
-        solver : func
-            Linear sysmtem solver function.
-
-        Returns
-        -------
-        pi : torch.Tensor
-            Steady state distribution vector.
-
-        """
-        # construct queue matrix
-        X = BirthDeathMat.apply(bvec, dvec, None)
-        
-        # super calling
-        return GenericSteadyDist.forward(ctx, X, ind, c, vmin, vmax, solver)
-
-    @staticmethod
-    def backward(ctx, grad_from_prev):
-        r"""Backwarding
-
-        Args
-        ----
-        grad_from_prev : torch.Tensor
-            Cumulative gradients from previous steps.
-
-        Returns
-        -------
-        grad_to_next : torch.Tensor
-            Cumulative gradients to next step.
-
-        Appendix
-        --------
-        Modify slightly for lower memory cost and higher speed.
-
-        """
-        # fetch necessary attributes to local
-        k     = ctx.k
-        gamma = ctx.gamma
-        _id   = ctx._id
-        Q     = ctx.Q
-        P     = ctx.P
-        pi    = ctx.pi
-        ind   = ctx.ind
-        cls   = BirthDeathSteadyDist
-
-        # construct selection gradient factor
-        fact_S = cls._fact_S(k, ind, dtype=P.dtype, device=P.device)
-
-        # construct uniform normalization gradient coefficient
-        coeff_gamma = cls._coeff_gamma(k, _id, dtype=P.dtype, device=P.device)
-
-        # construct P construction gradient coefficient
-        coeff_P = cls._coeff_P(k, P, Q, gamma, coeff_gamma, dtype=P.dtype, device=P.device)
-
-        # construct selection gradient coefficient
-        coeff_S = cls._coeff_S(k, P, pi, coeff_P)
-
-        # integrate all gradients, coefficients and factors
-        grad_to_dvec = cls._integrate(grad_from_prev, fact_S, coeff_S)
-        return None, grad_to_dvec, None, None, None, None, None
-
-    @staticmethod
-    def _coeff_P(k, P, Q, gamma, coeff_gamma, dtype, device):
-        r"""Construct uniform normalization gradient coefficient
-
-        Args
-        ----
-        k : int
-            Number of transition states.
-        P : torch.Tensor
-            Tensor P.
-        Q : torch.Tensor
-            Tensor Q.
-        gamma : float
-            Gamma.
-        coeff_gamma : torch.Tensor
-            Uniform normalization gradient coefficient tensor.
-        dtype : torch.dtype
-            Tensor dtype.
-        device : torch.device
-            Tensor dtype.
-
-        Returns
-        ------
-        coeff : torch.Tensor
-            Uniform normalization gradient coefficient tensor.
-
-        """
-        # construct Q construction gradient coefficient
-        coeff_Q = torch.zeros(k - 1, k, k, dtype=dtype, device=device)
-        for i in range(k - 1):
-            coeff_Q[i, i + 1, i] = 1
-            coeff_Q[i, i + 1, i + 1] = -1
-
-        # construct P construction gradient coefficient
-        coeff_P = torch.zeros(k - 1, k, k, dtype=P.dtype, device=P.device)
-        for i in range(k - 1):
-            coeff_P[i] = torch.mul(coeff_Q[i], gamma) - torch.mul(Q, coeff_gamma[i + 1]) 
-            coeff_P[i] = torch.div(coeff_P[i], gamma ** 2)
-        return coeff_P
-
-
 class BirthDeathMat(torch.autograd.Function):
     r"""Construct birth-death queue matrix supporting noise"""
     @staticmethod
@@ -651,95 +528,43 @@ class BirthDeathShareVec(torch.autograd.Function):
         return grad_to_val, None, None
 
 
-class DropCountLoss(torch.autograd.Function):
-    r"""Count of Drop Loss"""
-    @staticmethod
-    def forward(ctx, pi, num_drop, num_pass):
-        r"""Forwarding
-
-        Args
-        ----
-        pi : torch.Tensor
-            Steady state distribution.
-        num_drop : torch.LongTensor or int
-            Observed number of drop.
-        num_pass : torch.LongTensor or int
-            Observed number of pass
-
-        Returns
-        -------
-        loss : torch.Tensor
-            Count of drop loss.
-
-        """
-        # compute the loss directly
-        nll = -num_drop / torch.log(pi) - num_pass / torch.log(1 - pi)
-
-        # cache necessary attributes for backwarding
-        ctx.pi = pi
-        ctx.num_drop = num_drop
-        ctx.num_pass = num_pass
-        return nll.sum()
-
-    @staticmethod
-    def backward(ctx, grad_from_prev):
-        r"""Backwarding
-
-        Args
-        ----
-        grad_from_prev : torch.Tensor
-            Cumulative gradients from previous steps.
-
-        Returns
-        -------
-        grad_to_next : torch.Tensor
-            Cumulative gradients to next step.
-
-        """
-        # compute the gradient directly
-        dnll = (-ctx.num_drop / ctx.pi) + ctx.num_pass / (1 - ctx.pi)
-        return dnll, None, None
-
-
-
 r"""
 Rename
 ======
 - **stdy_dist**    : **GenericSteadyDist**
 - **bd_stdy_dist** : **BirthDeathSteadyDist**
 - **bd_mat**       : **BirthDeathMat**
-- **bd_shrvec**    : **BirthDeathShareVec**
-- **drpcnt_loss**  : **DropCountLoss**       
+- **bd_shrvec**    : **BirthDeathShareVec**      
 """
 
 
 # rename autograd functions
 stdy_dist    = GenericSteadyDist.apply
-bd_stdy_dist = BirthDeathSteadyDist.apply
 bd_mat       = BirthDeathMat.apply
 bd_shrvec    = BirthDeathShareVec.apply
-drpcnt_loss  = DropCountLoss.apply
 mse_loss     = lambda h, y: torch.nn.functional.mse_loss(h, y, reduction='sum')
 
 
 r"""
 Model
 ========
-- **BirthDeathModule**   : Birth-death process module
+- **MMmKModule**   : M/M/m/K Queue module
 - **CondDistLossModule** : Conditional steady state distribution loss module
 - **ResiDistLossModule** : Residual steady state distribution loss module
 """
 
 
-class BirthDeathModule(torch.nn.Module):
-    r"""Birth-death Process Module"""
-    def __init__(self, k, noise=True):
+class MMmKModule(torch.nn.Module):
+    r"""M/M/m/K Queue Module"""
+    def __init__(self, k, m=1, noise=True):
         r"""Initialize the class
 
         Args
         ----
         k : int
-            Number of states.
+            Number of states. (Number of customers + 1.)
+        m : int
+            Number of servers.
         noise : bool
             Allow noise queue transaction.
 
@@ -749,6 +574,7 @@ class BirthDeathModule(torch.nn.Module):
 
         # save necessary attributes
         self.k = k
+        self.m = m
 
         # explicitly allocate parameters
         self.mu = torch.nn.Parameter(torch.Tensor(1))
@@ -781,7 +607,7 @@ class BirthDeathModule(torch.nn.Module):
 
         """
         # generate birth-death vector
-        mus = bd_shrvec(self.mu, self.k - 1)
+        mus = bd_shrvec(self.mu, self.k - 1, self.m)
         lambds = bd_shrvec(lambd, self.k - 1)
 
         # get focusing steady states
@@ -908,8 +734,8 @@ r"""
 Experiment
 ==========
 - **WithRandom** : Class with Randomness Base
-- **Data1**      : Dataset 1
-- **Task1**      : Task 1
+- **DataMMmK**   : Dataset for M/M/m/K Queue
+- **TaskMMmK**   : Task for M/M/m/K Queue Model
 """
 
 
@@ -930,9 +756,9 @@ class WithRandom(object):
         torch.cuda.manual_seed(seed)
 
 
-class Data1(WithRandom):
-    r"""Dataset 1"""
-    def __init__(self, n, k, const_mu, epsilon=1e-4, ind=[-3, -2], *args, **kargs):
+class DataMMmK(WithRandom):
+    r"""Dataset for M/M/m/K Queue"""
+    def __init__(self, n, k, m, const_mu, epsilon=1e-4, ind=[-3, -2], *args, **kargs):
         r"""Initialize the class
 
         Args
@@ -940,7 +766,9 @@ class Data1(WithRandom):
         n : int
             Number of samples.
         k : int
-            Number of transition states.
+            Number of states. (Number of customers + 1.)
+        m : int
+            Number of servers.
         const_mu : int
             Constant mu.
         epsilon : int
@@ -954,12 +782,13 @@ class Data1(WithRandom):
 
         # save necessary attributes
         self.k = k
+        self.m = m
         self._mu = torch.Tensor([const_mu])
         self._epsilon = epsilon
         self.ind = ind
 
         # create death vector
-        self._mu_vec = bd_shrvec(self._mu, self.k - 1)
+        self._mu_vec = bd_shrvec(self._mu, self.k - 1, self.m)
 
         # create noise transition
         self._noise = torch.Tensor(self.k, self.k)
@@ -974,12 +803,12 @@ class Data1(WithRandom):
         for const_lambd in lambd_cands:
             # generate birth-death variable vector
             _lambd = torch.Tensor([const_lambd])
-            _lambd_vec = bd_shrvec(_lambd, k - 1)
+            _lambd_vec = bd_shrvec(_lambd, self.k - 1)
         
             # generate ideal birth-death process
             X = bd_mat(_lambd_vec, self._mu_vec, self._noise)
             pi = stdy_dist(X)
-            target = stdy_dist(X, ind)
+            target = stdy_dist(X, self.ind)
             
             # sample observations from steady state on ideal birth-death process
             for i in range(5):
@@ -987,9 +816,6 @@ class Data1(WithRandom):
                 obvs = [stats.poisson.rvs(proba * _lambd) for proba in probas]
                 obvs.append(stats.poisson.rvs((1 - probas.sum()) * _lambd))
                 self.samples.append((_lambd, pi, torch.Tensor(obvs)))
-
-        # visualize samples
-        # // self.viz('data.png')
 
     def __len__(self):
         r"""Get length of the class
@@ -1029,55 +855,9 @@ class Data1(WithRandom):
             desc = desc + line
         return desc
 
-    def viz(self, save):
-        r"""Save visualization
 
-        Args
-        ----
-        save : str
-            Path to save visualization.
-
-        """
-        # get data to visualize
-        lambds, dists, ns = [], [], []
-        for lambd, pi, obvs in self.samples:
-            lambds.append(lambd.item())
-            dists.append(pi[self.ind].data.numpy())
-            ns.append(obvs.data.numpy())
-        dists, ns = np.vstack(dists), np.vstack(ns)
-        dists = np.concatenate([dists, 1 - np.sum(dists, 1, keepdims=True)], 1)
-    
-        # render
-        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 6))
-        fig.suptitle("Data Visualization ({}, k = {}, {} = {})".format(
-            len(self), self.k, r'$\mu$', self._mu.data.item()))
-        ax1.set_title(r'Steady State Distribution $\pi$')
-        ax1.set_xticks(np.arange(len(lambds)))
-        ax1.set_xticklabels(lambds)
-        ax1.set_xlabel(r'$\lambda$')
-        ax1.set_facecolor('silver')
-        ax2.set_title(r'Sampled Observation $n$')
-        ax2.set_xticks(np.arange(len(lambds)))
-        ax2.set_xticklabels(lambds)
-        ax2.set_xlabel(r'$\lambda$')
-        ax2.set_facecolor('silver')
-        cum_dists = np.concatenate([np.zeros(shape=(len(self), 1)), np.cumsum(dists[:, 0:-1], 1)], 1)
-        cum_ns = np.concatenate([np.zeros(shape=(len(self), 1)), np.cumsum(ns[:, 0:-1], 1)], 1)
-        cmap = plt.get_cmap('gist_rainbow')
-        colors = [cmap(i / 3) for i in range(3)]
-        xdata = np.arange(len(self))
-        labels = [r'$\pi_{i, K - 2}$', r'$\pi_{i, K - 1}$', r'$\pi_{i}$ Rest']
-        for i in range(3):
-            ax1.bar(xdata, dists[:, i], bottom=cum_dists[:, i], color=colors[i], label=labels[i])
-            ax2.bar(xdata, ns[:, i], bottom=cum_ns[:, i], color=colors[i], label=labels[i])
-        ax1.legend()
-        ax2.legend()
-        fig.savefig(save)
-        plt.close(fig)
-
-
-class Task1(WithRandom):
-    r"""Task"""
+class TaskMMmK(WithRandom):
+    r"""Task for M/M/m/k Queue Model"""
     # constants
     CTRL_CLS = dict(cond=CondDistLossModule, resi=ResiDistLossModule, mse=DistMSELossModule)
     OPTIM_CLS = dict(sgd=torch.optim.SGD, adam=torch.optim.Adam, rms=torch.optim.RMSprop)
@@ -1112,7 +892,7 @@ class Task1(WithRandom):
 
         # allocate necessary attributes
         self.data = data
-        self.layers = BirthDeathModule(k=self.data.k, noise=True)
+        self.layers = MMmKModule(k=self.data.k, m=self.data.m, noise=True)
         self.criterion = self.CTRL_CLS[ctype]()
         self.optimizer = self.OPTIM_CLS[otype](self.layers.parameters(), lr=self.lr)
 
@@ -1171,9 +951,6 @@ class Task1(WithRandom):
         self.ideal_loss_te = self.eval_test(ideal=True)
         torch.save((self.ideal_loss_tr, self.ideal_loss_te), "{}_ideal_loss.pt".format(name))
 
-        # // # visualize training curve
-        # // self.viz("{}_train_curve.png".format(name), color=color)
-
     def _single_ffbp(self, ind):
         r"""Single-batch Forwarding and Backwarding
 
@@ -1214,25 +991,6 @@ class Task1(WithRandom):
         loss.backward()
         self.optimizer.step()
 
-    def eval_test(self, ideal=False):
-        r"""Evaluate test cases
-        
-        Args
-        ----
-        ideal : bool
-            Evaluate ideal case.
-
-        """
-        # forward
-        loss_lst = []
-        for i in range(len(self.data)):
-            lambd, pi, obvs = self.data.samples[i]
-            output = pi if ideal else self.layers.forward(lambd)
-            loss = mse_loss(output[-1], pi[-1])
-            loss_lst.append(loss)
-        loss = sum(loss_lst)
-        return loss.data.item()
-
     def eval_train(self, ideal=False):
         r"""Evaluate training cases
         
@@ -1249,45 +1007,66 @@ class Task1(WithRandom):
             output = pi if ideal else self.layers.forward(lambd)
             loss = self.criterion.forward(self.data.ind, output, pi, obvs)
             loss_lst.append(loss)
-        loss = sum(loss_lst)
+        loss = sum(loss_lst) / len(loss_lst)
         return loss.data.item()
 
-    def viz(self, save, color='green'):
-        r"""Save visualization
-
+    def eval_test(self, ideal=False):
+        r"""Evaluate test cases
+        
         Args
         ----
-        save : str
-            Path to save visualization.
-        color : str
-            Visulization color.
+        ideal : bool
+            Evaluate ideal case.
 
         """
-        # render
-        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 6))
-        fig.suptitle('Training Curve')
-        
-        # render training
-        ax1.set_title('Train Loss')
-        ax1.set_facecolor('silver')
-        xdata = np.arange(len(self.loss_lst_tr))
-        ymin, ymax = self.ideal_loss_tr, self.loss_lst_tr[0]
-        yrange = ymax - ymin
-        ax1.plot(xdata, self.loss_lst_tr, color=color)
-        ax1.axhline(self.ideal_loss_tr, color='white', lw=0.5, ls='--')
-        ax1.set_ylim(ymin - yrange * 0.05, ymax + yrange * 0.05)
+        # forward
+        loss_lst = []
+        for i in range(len(self.data)):
+            lambd, pi, obvs = self.data.samples[i]
+            output = pi if ideal else self.layers.forward(lambd)
+            loss = mse_loss(output[-1], pi[-1])
+            loss_lst.append(loss)
+        loss = sum(loss_lst) / len(loss_lst)
+        return loss.data.item()
 
-        # render test
-        ax2.set_title('Test Loss')
-        ax2.set_facecolor('silver')
-        xdata = np.arange(len(self.loss_lst_te))
-        ymin, ymax = self.ideal_loss_te, self.loss_lst_te[0]
-        yrange = ymax - ymin
-        ax2.plot(xdata, self.loss_lst_te, color=color)
-        ax2.axhline(self.ideal_loss_te, color='white', lw=0.5, ls='--')
-        ax2.set_ylim(ymin - yrange * 0.05, ymax + yrange * 0.05)
-        fig.savefig(save)
-        plt.close(fig)
+
+r"""
+Study
+=====
+- **MM1K** : M/M/1/K Hyper Parameter Study
+"""
+
+
+def MM1K(data_seed=47, model_seed=47):
+    r"""M/M/1/K Hyper Parameter Tuning
+
+    Args
+    ----
+    data_seed : int
+        Random seed for data generation.
+    model_seed : int
+        Random seed for model initializaion and tuning.
+
+    """
+    # generate data
+    data = DataMMmK(100, k=6, m=1, const_mu=25, epsilon=1e-4, ind=[-3, -2], seed=data_seed)
+    print("#Data: {}".format(len(data)))
+
+    # traverse loss and batch settings
+    ctype_lst  = ['mse', 'cond', 'resi']
+    btype_lst  = ['single'] # // ['single', 'full']
+    otype_lst  = ['adam']   # // ['sgd', 'adam', 'rms']
+    lr_str_lst = ['1e-2']   # // ['1e-1', '1e-2', '1e-3']
+    alpha_lst  = [1000]     # // [1, 10, 100, 1000]
+    hyper_combs = itertools.product(ctype_lst, btype_lst, otype_lst, lr_str_lst, alpha_lst)
+    num_epochs  = 100
+    for combine in hyper_combs:
+        ctype, btype, otype, lr_str, alpha = combine
+        name = "{}_{}_{}_{}_{}".format(ctype, btype, otype, lr_str, alpha)
+        print("==[{}]==".format(name))
+        task = TaskMMmK(data, ctype, otype, btype, lr=float(lr_str), alpha=alpha, seed=model_seed)
+        task.fit_from_rand(num_epochs, name=name)
+
 
 if __name__ == '__main__':
     r"""Main Entrance"""
@@ -1295,20 +1074,5 @@ if __name__ == '__main__':
     np.set_printoptions(precision=8, suppress=True)
     torch.Tensor = torch.DoubleTensor
 
-    # set seed
-    seed = 47
-
-    # generate data
-    data = Data1(100, k=6, const_mu=25, epsilon=1e-4, ind=[-3, -2], seed=seed)
-    print("#Data: {}".format(len(data)))
-
-    # traverse loss and batch settings
-    for loss_type in ('mse', 'cond', 'resi'):
-        for batch_type in ('single', 'full'):
-            for optim_type in ('sgd', 'adam', 'rms'):
-                for lr_str in ('1e-1', '1e-2', '1e-3'):
-                    name = "{}_{}_{}_{}".format(loss_type, batch_type, optim_type, lr_str)
-                    print("==[{}]==".format(name))
-                    task = Task1(
-                        data, loss_type, optim_type, batch_type, lr=float(lr_str), alpha=1000, seed=seed)
-                    task.fit_from_rand(100, name=name)
+    # do targeting hyper study
+    MM1K()

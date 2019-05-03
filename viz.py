@@ -10,13 +10,15 @@ Visualize
 """
 
 
-def single_ctype_cfgs(ctype):
+def single_ctype_cfgs(ctype, warn=True):
     r"""Visualize results of all configurations for a single ctype
 
     Args
     ----
     ctype : str
         Criterion type.
+    warn : bool
+        Show warning information.
 
     """
     # create canvas
@@ -32,7 +34,7 @@ def single_ctype_cfgs(ctype):
 
     # set colors
     cmap = plt.get_cmap('gist_rainbow')
-    num = 2 * 3 * 3
+    num = 2 * 3 * 3 * 4
     colors = [cmap(i / num) for i in range(num)]
 
     # traverse all combinations
@@ -43,21 +45,29 @@ def single_ctype_cfgs(ctype):
     for btype in ('single', 'full'):
         for otype in ('sgd', 'adam', 'rms'):
             for lr_str in ('1e-1', '1e-2', '1e-3'):
-                name = "{}_{}_{}_{}".format(ctype, btype, otype, lr_str)
-                lst_tr, lst_te = torch.load("{}_loss_lst.pt".format(name))
-                idl_tr, idl_te = torch.load("{}_ideal_loss.pt".format(name))
-                int_tr, int_te = lst_tr[0], lst_te[0]
-                min_tr = idl_tr if min_tr is None else min(min_tr, idl_tr)
-                min_te = idl_te if min_te is None else min(min_te, idl_te)
-                max_tr = int_tr if max_tr is None else max(max_tr, int_tr)
-                max_te = int_te if max_te is None else max(max_te, int_te)
-                xdata_tr, xdata_te = list(range(len(lst_tr))), list(range(len(lst_te)))
-                ydata_tr, ydata_te = lst_tr, lst_te
-                line = ax_tr.plot(xdata_tr, ydata_tr, color=colors[cnt], label=name)[0]
-                line = ax_te.plot(xdata_te, ydata_te, color=colors[cnt], label=name)[0]
-                line_lst.append(line)
-                label_lst.append(name)
-                cnt += 1
+                for alpha in (1, 10, 100, 1000):
+                    name = "{}_{}_{}_{}_{}".format(ctype, btype, otype, lr_str, alpha)
+                    try:
+                        lst_tr, lst_te = torch.load("{}_loss_lst.pt".format(name))
+                        idl_tr, idl_te = torch.load("{}_ideal_loss.pt".format(name))
+                    except:
+                        if warn:
+                            print("result <{}> not found".format(name))
+                        else:
+                            pass
+                        continue
+                    int_tr, int_te = lst_tr[0], lst_te[0]
+                    min_tr = idl_tr if min_tr is None else min(min_tr, idl_tr)
+                    min_te = idl_te if min_te is None else min(min_te, idl_te)
+                    max_tr = int_tr if max_tr is None else max(max_tr, int_tr)
+                    max_te = int_te if max_te is None else max(max_te, int_te)
+                    xdata_tr, xdata_te = list(range(len(lst_tr))), list(range(len(lst_te)))
+                    ydata_tr, ydata_te = lst_tr, lst_te
+                    line = ax_tr.plot(xdata_tr, ydata_tr, color=colors[cnt], label=name)[0]
+                    line = ax_te.plot(xdata_te, ydata_te, color=colors[cnt], label=name)[0]
+                    line_lst.append(line)
+                    label_lst.append(name)
+                    cnt += 1
     ax_tr.axhline(min_tr, color='white', lw=0.5, ls='--')
     ax_te.axhline(min_te, color='white', lw=0.5, ls='--')
 
@@ -71,13 +81,13 @@ def single_ctype_cfgs(ctype):
     fig.subplots_adjust(bottom=0.25)
     fig.savefig("compare_{}.png".format(ctype))
 
-def each_ctype_best():
+def each_ctype_best(warn=True):
     r"""Visualize results of best configurations for each ctype
 
     Args
     ----
-    ctype : str
-        Criterion type.
+    warn : bool
+        Show warning information.
 
     """
     # create canvas
@@ -100,16 +110,24 @@ def each_ctype_best():
         for btype in ('single', 'full'):
             for otype in ('sgd', 'adam', 'rms'):
                 for lr_str in ('1e-1', '1e-2', '1e-3'):
-                    name = "{}_{}_{}_{}".format(ctype, btype, otype, lr_str)
-                    _, lst_te = torch.load("{}_loss_lst.pt".format(name))
-                    _, idl_te = torch.load("{}_ideal_loss.pt".format(name))
-                    if best_loss is None or min(lst_te) < best_loss:
-                        best_loss = min(lst_te)
-                        best_name = name
-                        best_lst = lst_te
-                        best_idl = idl_te
-                    else:
-                        pass
+                    for alpha in (1, 10, 100, 1000):
+                        name = "{}_{}_{}_{}_{}".format(ctype, btype, otype, lr_str, alpha)
+                        try:
+                            _, lst_te = torch.load("{}_loss_lst.pt".format(name))
+                            _, idl_te = torch.load("{}_ideal_loss.pt".format(name))
+                        except:
+                            if warn:
+                                print("result <{}> no found".format(name))
+                            else:
+                                pass
+                            continue
+                        if best_loss is None or min(lst_te) < best_loss:
+                            best_loss = min(lst_te)
+                            best_name = name
+                            best_lst = lst_te
+                            best_idl = idl_te
+                        else:
+                            pass
         vmin = best_idl if vmin is None else min(vmin, best_idl)
         vmax = best_lst[0] if vmax is None else max(vmax, best_lst[0])
         xdata = list(range(len(best_lst)))
@@ -130,10 +148,13 @@ def each_ctype_best():
 
 if __name__ == '__main__':
     r"""Main Entrance"""
+    # warning flag
+    warn = False
+
     # visualize best configuration
-    each_ctype_best()
+    each_ctype_best(warn=warn)
 
     # visualize each criterion
-    single_ctype_cfgs('mse')
-    single_ctype_cfgs('cond')
-    single_ctype_cfgs('resi')
+    single_ctype_cfgs('mse' , warn=warn)
+    single_ctype_cfgs('cond', warn=warn)
+    single_ctype_cfgs('resi', warn=warn)

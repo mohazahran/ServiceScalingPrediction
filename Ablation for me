@@ -1,0 +1,16 @@
+Ablation for me
+- Learning curve of #samples
+- no R
+- no split
+- learn direct on pi
+- learn from large power
+- alpha worsen generalization
+
+M/M/m/m + r
+Leaky Bucket
+Token Bucket
+Er/M/m
+
+M/M/m/m + r
+Leaky Bucket + WebBrowseQueue
+Circular Queue (Multi Custom Queue)
