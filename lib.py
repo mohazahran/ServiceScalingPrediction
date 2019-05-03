@@ -1166,10 +1166,13 @@ class Task1(WithRandom):
                 break
         torch.save((self.loss_lst_tr, self.loss_lst_te), "{}_loss_lst.pt".format(name))
 
-        # visualize training curve
+        # get ideal result
         self.ideal_loss_tr = self.eval_train(ideal=True)
         self.ideal_loss_te = self.eval_test(ideal=True)
-        self.viz("{}_train_curve.png".format(name), color=color)
+        torch.save((self.ideal_loss_tr, self.ideal_loss_te), "{}_ideal_loss.pt".format(name))
+
+        # // # visualize training curve
+        # // self.viz("{}_train_curve.png".format(name), color=color)
 
     def _single_ffbp(self, ind):
         r"""Single-batch Forwarding and Backwarding
@@ -1294,10 +1297,6 @@ if __name__ == '__main__':
 
     # set seed
     seed = 47
-
-    # set colors
-    cmap = plt.get_cmap('gist_rainbow')
-    colors = [cmap(i / 6) for i in range(6)]
 
     # generate data
     data = Data1(100, k=6, const_mu=25, epsilon=1e-4, ind=[-3, -2], seed=seed)
