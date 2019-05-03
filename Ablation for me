@@ -12,5 +12,5 @@ Token Bucket
 Er/M/m
 
 M/M/m/m + r
-Leaky Bucket + WebBrowseQueue
-Circular Queue (Multi Custom Queue)
+Leaky Bucket + WebBrowseQueue lambda given, lambda[B] unknown, finite queue failure
+Circular Queue (Multi Probed Custom Queue / Proportion m) monitor q1 = 0 and q1 = 1, mu[1] given
