@@ -3,7 +3,10 @@ import scipy.stats as stats
 import torch
 import re
 import copy
+import os
+import shutil
 import itertools
+import sys
 
 
 r"""
@@ -539,16 +542,17 @@ Rename
 
 
 # rename autograd functions
-stdy_dist    = GenericSteadyDist.apply
-bd_mat       = BirthDeathMat.apply
-bd_shrvec    = BirthDeathShareVec.apply
-mse_loss     = lambda h, y: torch.nn.functional.mse_loss(h, y, reduction='sum')
+stdy_dist = GenericSteadyDist.apply
+bd_mat    = BirthDeathMat.apply
+bd_shrvec = BirthDeathShareVec.apply
+mse_loss  = lambda h, y: torch.nn.functional.mse_loss(h, y, reduction='sum')
 
 
 r"""
 Model
 ========
-- **MMmKModule**   : M/M/m/K Queue module
+- **MMmKModule**         : M/M/m/K Queue module
+- **LBWBModule**         : Leaky Bucket Web Browsing Queue module
 - **CondDistLossModule** : Conditional steady state distribution loss module
 - **ResiDistLossModule** : Residual steady state distribution loss module
 """
@@ -616,6 +620,87 @@ class MMmKModule(torch.nn.Module):
         else:
             X = bd_mat(lambds, mus, self.E)
             return stdy_dist(X, ind)
+
+
+class LBWBModule(torch.nn.Module):
+    r"""Leaky Bucket Web Browsing Queue Module"""
+    def __init__(self, k, lambda_01, lambda_B_01, mu_01, c, noise=True):
+        r"""Initialize the class
+
+        Args
+        ----
+        k : int
+            Number of states. (Number of customers + 1.)
+        lambda_01 : torch.Tensor
+            01 matrix for lambda transition.
+        lambda_B_01 : torch.Tensor
+            01 matrix for lambda[B] transition.
+        mu_01 : torch.Tensor
+            01 matrix for mu transition.
+        c : int
+            Number of customers.
+        noise : bool
+            Allow noise queue transaction.
+
+        """
+        # super calling
+        torch.nn.Module.__init__(self)
+
+        # save necessary attributes
+        self.k = k
+        self.lambda_01 = lambda_01
+        self.lambda_B_01 = lambda_B_01
+        self.mu_01 = mu_01
+        self.c= c
+
+        # explicitly allocate parameters
+        self.lambd_B = torch.nn.Parameter(torch.Tensor(1))
+        self.mu = torch.nn.Parameter(torch.Tensor(1))
+        if noise:
+            self.E = torch.nn.Parameter(torch.Tensor(self.k, self.k))
+        else:
+            self.E = None
+
+        # explicitly initialize parameters
+        self.lambd_B.data.fill_(1)
+        self.mu.data.fill_(1)
+        if noise:
+            self.E.data.fill_(0)
+        else:
+            pass
+
+    def forward(self, lambd, ind=None):
+        r"""Forwarding
+
+        Args
+        ----
+        lambd : int
+            Input lambda.
+        ind : [int, ...]
+            Focusing steady paired state index.
+
+        Returns
+        -------
+        dist : torch.Tensor
+            Focusing steady state distribution.
+
+        """
+        # generate birth-death vector
+        mus = self.mu * self.mu_01
+        lambds = lambd * self.lambda_01 * self.c
+        lambd_Bs = self.lambd_B * self.lambda_B_01
+
+        # get focusing transition matrix
+        if self.E is None:
+            X = lambds + lambd_Bs + mus
+        else:
+            self.E.data[torch.nonzero(self.lambda_01)] = 0
+            self.E.data[torch.nonzero(self.lambda_B_01)] = 0
+            self.E.data[torch.nonzero(self.mu_01)] = 0
+            for i in range(self.k):
+                self.E.data[i, i] = 0
+            X = lambds + lambd_Bs + mus + self.E
+        return stdy_dist(X, ind)
 
 
 class CondDistLossModule(torch.nn.Module):
@@ -735,7 +820,9 @@ Experiment
 ==========
 - **WithRandom** : Class with Randomness Base
 - **DataMMmK**   : Dataset for M/M/m/K Queue
-- **TaskMMmK**   : Task for M/M/m/K Queue Model
+- **DataMMmmr**  : Dataset for M/M/m/m+r Queue
+- **DataLBWB**   : Dataset for Leaky Bucket Web Browsing Queue
+- **Task**       : Task for All Above Queue Model
 """
 
 
@@ -794,11 +881,16 @@ class DataMMmK(WithRandom):
         self._noise = torch.Tensor(self.k, self.k)
         self._noise.normal_()
         self._noise = _zero_tridiag(self._noise)
+        self._noise = torch.abs(self._noise)
         self._noise = self._noise / torch.norm(self._noise) * self._epsilon
 
         # generate samples
         self.samples = []
-        lambd_cands = np.random.permutation(np.arange(1, const_mu * 2))[0:n]
+        lambd_cands = []
+        while len(lambd_cands) < n:
+            lambd_cands.extend(list(range(1, const_mu * 2)))
+        np.random.shuffle(lambd_cands)
+        lambd_cands = lambd_cands[0:n]
         lambd_cands = sorted(lambd_cands)
         for const_lambd in lambd_cands:
             # generate birth-death variable vector
@@ -811,11 +903,10 @@ class DataMMmK(WithRandom):
             target = stdy_dist(X, self.ind)
             
             # sample observations from steady state on ideal birth-death process
-            for i in range(5):
-                probas = target.data.numpy()
-                obvs = [stats.poisson.rvs(proba * _lambd) for proba in probas]
-                obvs.append(stats.poisson.rvs((1 - probas.sum()) * _lambd))
-                self.samples.append((_lambd, pi, torch.Tensor(obvs)))
+            probas = target.data.numpy()
+            obvs = [stats.poisson.rvs(proba * _lambd) for proba in probas]
+            obvs.append(stats.poisson.rvs((1 - probas.sum()) * _lambd))
+            self.samples.append((_lambd, pi, torch.Tensor(obvs)))
 
     def __len__(self):
         r"""Get length of the class
@@ -829,46 +920,195 @@ class DataMMmK(WithRandom):
         # get length
         return len(self.samples)
 
-    def __repr__(self):
-        r"""Get representation of the class
+
+class DataMMmmr(DataMMmK):
+    r"""Dataset for M/M/m/m+r Queue"""
+    def __init__(self, n, r, m, const_mu, epsilon=1e-4, ind=[0, 1], *args, **kargs):
+        r"""Initialize the class
+
+        Args
+        ----
+        n : int
+            Number of samples.
+        r : int
+            Number of additional states than servers.
+        m : int
+            Number of servers.
+        const_mu : int
+            Constant mu.
+        epsilon : int
+            Epsilon for noise transition.
+        ind : [int, ...]
+            Focusing state indices.
+
+        """
+        # super call
+        DataMMmK.__init__(self, n, m + r, m, const_mu, epsilon, ind, *args, **kargs)
+
+
+class DataLBWB(WithRandom):
+    r"""Dataset for Leaky Bucket Web Browsing Queue"""
+    def __init__(self, n, rqst_sz, rsrc_sz, c, const_lambda_B, const_mu, epsilon=1e-4,
+                 ind=[(0, 0), (0, 1), (1, 0)], *args, **kargs):
+        r"""Initialize the class
+
+        Args
+        ----
+        n : int
+            Number of samples.
+        rqst_sz : int
+            Request Buffer size.
+        rsrc_sz : int
+            Resource Buffer size.
+        c : int
+            Number of customers.
+        const_lambda_B : int
+            Constant lambda for bucket.
+        const_mu : int
+            Constant mu.
+        epsilon : int
+            Epsilon for noise transition.
+        ind : [int, ...]
+            Focusing state indices.
+
+        """
+        # super call
+        WithRandom.__init__(self, *args, **kargs)
+
+        # save necessary attributes
+        self.rqst_sz = rqst_sz
+        self.rsrc_sz = rsrc_sz
+        self.c = c
+        self._lambda_B = torch.Tensor([const_lambda_B])
+        self._mu = torch.Tensor([const_mu])
+        self._epsilon = epsilon
+        self.ind = ind
+
+        # genrate all possible states
+        dx_lst = []
+        for rqst_itr in range(rqst_sz + 1):
+            for rsrc_itr in range(rsrc_sz + 1):
+                # generate paired state
+                pair = (rqst_itr, rsrc_itr)
+
+                # request increment
+                if rqst_itr + 1 <= rqst_sz:
+                    dx_lst.append((pair, (rqst_itr + 1, rsrc_itr), 'lambda'))
+                else:
+                    pass
+
+                # request and resource decrement
+                if rqst_itr - 1 >= 0 and rsrc_itr - 1 >= 0:
+                    dx_lst.append((pair, (rqst_itr - 1, rsrc_itr - 1), 'mu'))
+                else:
+                    pass
+
+                # resource increment
+                if rsrc_itr + 1 <= rsrc_sz:
+                    dx_lst.append((pair, (rqst_itr, rsrc_itr + 1), 'lambda[B]'))
+                else:
+                    pass
+
+        # assign all possible states with unique indices
+        pair2idx = {}
+        for pair1, pair2, _ in dx_lst:
+            for pair in (pair1, pair2):
+                if pair in pair2idx:
+                    pass
+                else:
+                    pair2idx[pair] = len(pair2idx)
+        self.k = len(pair2idx)
+        self.ind = [pair2idx[itr] for itr in self.ind]
+
+        # construct sharing matrices
+        self.lambda_01 = torch.Tensor(self.k, self.k)
+        self.lambda_B_01 = torch.Tensor(self.k, self.k)
+        self.mu_01 = torch.Tensor(self.k, self.k)
+        self.lambda_01.zero_()
+        self.lambda_B_01.zero_()
+        self.mu_01.zero_()
+        self.lambda_01.requires_grad = False
+        self.lambda_B_01.requires_grad = False
+        self.mu_01.requires_grad = False
+        for pair1, pair2, dx in dx_lst:
+            idx1, idx2 = pair2idx[pair1], pair2idx[pair2]
+            if dx == 'lambda':
+                self.lambda_01[idx1, idx2] = 1
+            elif dx == 'lambda[B]':
+                self.lambda_B_01[idx1, idx2] = 1
+            elif dx == 'mu':
+                self.mu_01[idx1, idx2] = 1
+            else:
+                raise RuntimeError()
+
+        # create death matrix and bucket-birth matrix
+        self._lambda_B_mx = self._lambda_B * self.lambda_B_01
+        self._mu_mx = self._mu * self.mu_01
+
+        # create noise transition
+        self._noise = torch.Tensor(self.k, self.k)
+        self._noise.normal_()
+        for pair1, pair2, dx in dx_lst:
+            idx1, idx2 = pair2idx[pair1], pair2idx[pair2]
+            self._noise[idx1, idx2] = 0
+        for i in range(self.k):
+            self._noise[i, i] = 0
+        self._noise = torch.abs(self._noise)
+        self._noise = self._noise / torch.norm(self._noise) * self._epsilon
+
+        # generate samples
+        self.samples = []
+        lambd_cands = []
+        while len(lambd_cands) < n:
+            lambd_cands.extend(list(range(1, const_mu * 2)))
+        np.random.shuffle(lambd_cands)
+        lambd_cands = lambd_cands[0:n]
+        lambd_cands = sorted(lambd_cands)
+        for const_lambd in lambd_cands:
+            # generate birth-death variable vector
+            _lambd = torch.Tensor([const_lambd])
+            _lambd_mx = _lambd * self.lambda_01 * self.c
+        
+            # generate ideal birth-death process
+            X = _lambd_mx + self._lambda_B_mx + self._mu_mx + self._noise
+            pi = stdy_dist(X)
+            target = stdy_dist(X, self.ind)
+            
+            # sample observations from steady state on ideal birth-death process
+            probas = target.data.numpy()
+            obvs = [stats.poisson.rvs(proba * _lambd) for proba in probas]
+            obvs.append(stats.poisson.rvs((1 - probas.sum()) * _lambd))
+            self.samples.append((_lambd, pi, torch.Tensor(obvs)))
+
+    def __len__(self):
+        r"""Get length of the class
 
         Returns
         -------
-        desc : str
-            Representation of the class
+        length : int
+            Length of the class.
 
         """
-        # address representation items
-        labels = ['Lambda', 'Pi', 'N']
-        items, mxlen = [], [len(itr) for itr in labels]
-        for itr in self.samples:
-            item = []
-            for i in range(3):
-                item.append(re.sub(r'[\n\r] +', ' ', repr(itr[i].data.numpy())[6:-1]))
-                mxlen[i] = max(mxlen[i], len(item[i]))
-            items.append(item)
-
-        # generate representation
-        desc = "{0:{3}} {1:{4}} {2:{5}}\n".format(*labels, *mxlen)
-        for item in items:
-            line = "{0:{3}} {1:{4}} {2:{5}}\n".format(*item, *mxlen)
-            desc = desc + line
-        return desc
+        # get length
+        return len(self.samples)
 
 
-class TaskMMmK(WithRandom):
-    r"""Task for M/M/m/k Queue Model"""
+class Task(WithRandom):
+    r"""Task for All Above Queue Model"""
     # constants
     CTRL_CLS = dict(cond=CondDistLossModule, resi=ResiDistLossModule, mse=DistMSELossModule)
     OPTIM_CLS = dict(sgd=torch.optim.SGD, adam=torch.optim.Adam, rms=torch.optim.RMSprop)
 
-    def __init__(self, data, ctype, otype, ptype, lr=0.1, alpha=100, *args, **kargs):
+    def __init__(self, data, layers, ctype='cond', otype='adam', ptype='single', lr=0.01, alpha=1000,
+                 *args, **kargs):
         r"""Initialize the class
 
         Args
         ----
         data : object
             Dataset.
+        layers : torch.nn.Module
+            Neural network module to tune.
         ctype : str
             Criterion type.
         otype : str
@@ -892,11 +1132,11 @@ class TaskMMmK(WithRandom):
 
         # allocate necessary attributes
         self.data = data
-        self.layers = MMmKModule(k=self.data.k, m=self.data.m, noise=True)
+        self.layers = layers
         self.criterion = self.CTRL_CLS[ctype]()
         self.optimizer = self.OPTIM_CLS[otype](self.layers.parameters(), lr=self.lr)
 
-    def fit_from_rand(self, num_epochs, color='green', name='task'):
+    def fit_from_rand(self, num_epochs, color='green', root='.', name='task'):
         r"""Fit the model from randomness
 
         Args
@@ -924,17 +1164,21 @@ class TaskMMmK(WithRandom):
             try:
                 # shuffle data
                 dind = np.random.permutation(len(self.data))
-        
+            
                 # train
                 getattr(self, "_{}_ffbp".format(self.ptype))(dind)
-        
+            
                 # evaluate
                 loss_tr = self.eval_train()
                 loss_te = self.eval_test()
-                self.loss_lst_tr.append(loss_tr)
-                self.loss_lst_te.append(loss_te)
                 print(fmt.format(epc, loss_tr, loss_te))
-    
+                if np.isnan(loss_tr) or np.isnan(loss_te):
+                    print('force to stop by nan')
+                    break
+                else:
+                    self.loss_lst_tr.append(loss_tr)
+                    self.loss_lst_te.append(loss_te)
+        
                 # update best parameters
                 if self.best_loss is None or loss_te < self.best_loss:
                     self.best_loss = loss_te
@@ -942,14 +1186,22 @@ class TaskMMmK(WithRandom):
                 else:
                     pass
             except Exception as err:
-                print(err)
+                print("force to stop by <{}>".format(err))
                 break
-        torch.save((self.loss_lst_tr, self.loss_lst_te), "{}_loss_lst.pt".format(name))
 
         # get ideal result
         self.ideal_loss_tr = self.eval_train(ideal=True)
         self.ideal_loss_te = self.eval_test(ideal=True)
-        torch.save((self.ideal_loss_tr, self.ideal_loss_te), "{}_ideal_loss.pt".format(name))
+
+        # save result
+        save_dict = {
+            'loss_lst_tr'  : self.loss_lst_tr,
+            'loss_lst_te'  : self.loss_lst_te,
+            'ideal_loss_tr': self.ideal_loss_tr,
+            'ideal_loss_te': self.ideal_loss_te,
+            'paarm'        : self.layers.state_dict(),
+        }
+        torch.save(save_dict, os.path.join(root, "{}.pt".format(name)))
 
     def _single_ffbp(self, ind):
         r"""Single-batch Forwarding and Backwarding
@@ -1033,7 +1285,9 @@ class TaskMMmK(WithRandom):
 r"""
 Study
 =====
-- **MM1K** : M/M/1/K Hyper Parameter Study
+- **MM1K**  : M/M/1/K Hyper Parameter Study
+- **MMmmr** : M/M/m/m+r Hyper Parameter Study
+- **LBWB**  : Leaky Bucket Web Browsing Hyper Parameter Study
 """
 
 
@@ -1048,24 +1302,124 @@ def MM1K(data_seed=47, model_seed=47):
         Random seed for model initializaion and tuning.
 
     """
+    # clean results folder
+    root = 'MM1K'
+    if os.path.isdir(root):
+        shutil.rmtree(root)
+    else:
+        pass
+    os.makedirs(root)
+
     # generate data
-    data = DataMMmK(100, k=6, m=1, const_mu=25, epsilon=1e-4, ind=[-3, -2], seed=data_seed)
+    data = DataMMmK(400, k=6, m=1, const_mu=25, epsilon=1e-4, ind=[-3, -2], seed=data_seed)
+    layers = MMmKModule(k=data.k, m=data.m, noise=True)
+    init_params = copy.deepcopy(layers.state_dict())
     print("#Data: {}".format(len(data)))
 
     # traverse loss and batch settings
-    ctype_lst  = ['mse', 'cond', 'resi']
-    btype_lst  = ['single'] # // ['single', 'full']
-    otype_lst  = ['adam']   # // ['sgd', 'adam', 'rms']
-    lr_str_lst = ['1e-2']   # // ['1e-1', '1e-2', '1e-3']
-    alpha_lst  = [1000]     # // [1, 10, 100, 1000]
-    hyper_combs = itertools.product(ctype_lst, btype_lst, otype_lst, lr_str_lst, alpha_lst)
-    num_epochs  = 100
+    ctype_lst     = ['mse', 'cond', 'resi']
+    btype_lst     = ['single', 'full']
+    otype_lst     = ['sgd', 'adam', 'rms']
+    lr_str_lst    = ['1e-1', '1e-2', '1e-3']
+    alpha_str_lst = ['1e-1', '1e1', '1e3']
+    hyper_combs = itertools.product(ctype_lst, btype_lst, otype_lst, lr_str_lst, alpha_str_lst)
+    num_epochs  = NUM_EPOCHS
     for combine in hyper_combs:
-        ctype, btype, otype, lr_str, alpha = combine
-        name = "{}_{}_{}_{}_{}".format(ctype, btype, otype, lr_str, alpha)
+        ctype, btype, otype, lr_str, alpha_str = combine
+        name = "{}_{}_{}_{}_{}".format(ctype, btype, otype, lr_str, alpha_str)
         print("==[{}]==".format(name))
-        task = TaskMMmK(data, ctype, otype, btype, lr=float(lr_str), alpha=alpha, seed=model_seed)
-        task.fit_from_rand(num_epochs, name=name)
+        layers.load_state_dict(init_params)
+        lr, alpha = float(lr_str), float(alpha_str)
+        task = Task(data, layers, ctype, otype, btype, lr=lr, alpha=alpha, seed=model_seed)
+        task.fit_from_rand(num_epochs, root=root, name=name)
+
+def MMmmr(data_seed=47, model_seed=47):
+    r"""M/M/m/m+r Hyper Parameter Tuning
+
+    Args
+    ----
+    data_seed : int
+        Random seed for data generation.
+    model_seed : int
+        Random seed for model initializaion and tuning.
+
+    """
+    # clean results folder
+    root = 'MMmmr'
+    if os.path.isdir(root):
+        shutil.rmtree(root)
+    else:
+        pass
+    os.makedirs(root)
+
+    # generate data
+    data = DataMMmmr(400, r=2, m=4, const_mu=25, epsilon=1e-4, ind=[0, 1], seed=data_seed)
+    layers = MMmKModule(k=data.k, m=data.m, noise=True)
+    init_params = copy.deepcopy(layers.state_dict())
+    print("#Data: {}".format(len(data)))
+
+    # traverse loss and batch settings
+    ctype_lst     = ['mse', 'cond', 'resi']
+    btype_lst     = ['single', 'full']
+    otype_lst     = ['sgd', 'adam', 'rms']
+    lr_str_lst    = ['1e-1', '1e-2', '1e-3']
+    alpha_str_lst = ['1e-1', '1e1', '1e3']
+    hyper_combs = itertools.product(ctype_lst, btype_lst, otype_lst, lr_str_lst, alpha_str_lst)
+    num_epochs  = NUM_EPOCHS
+    for combine in hyper_combs:
+        ctype, btype, otype, lr_str, alpha_str = combine
+        name = "{}_{}_{}_{}_{}".format(ctype, btype, otype, lr_str, alpha_str)
+        print("==[{}]==".format(name))
+        layers.load_state_dict(init_params)
+        lr, alpha = float(lr_str), float(alpha_str)
+        task = Task(data, layers, ctype, otype, btype, lr=lr, alpha=alpha, seed=model_seed)
+        task.fit_from_rand(num_epochs, root=root, name=name)
+
+def LBWB(data_seed=47, model_seed=47):
+    r"""Leaky Bucket Web Browsing Hyper Parameter Tuning
+
+    Args
+    ----
+    data_seed : int
+        Random seed for data generation.
+    model_seed : int
+        Random seed for model initializaion and tuning.
+
+    """
+    # clean results folder
+    root = 'LBWB'
+    if os.path.isdir(root):
+        shutil.rmtree(root)
+    else:
+        pass
+    os.makedirs(root)
+
+    # generate data
+    data = DataLBWB(
+        400, rqst_sz=3, rsrc_sz=3, c=3, const_lambda_B=15, const_mu=25, epsilon=1e-4,
+        ind=[(0, 0), (0, 1), (1, 0)], seed=data_seed)
+    layers = LBWBModule(
+        k=data.k, lambda_01=data.lambda_01, lambda_B_01=data.lambda_B_01, mu_01=data.mu_01, c=data.c,
+        noise=True)
+    init_params = copy.deepcopy(layers.state_dict())
+    print("#Data: {}".format(len(data)))
+
+    # traverse loss and batch settings
+    ctype_lst     = ['mse', 'cond', 'resi']
+    btype_lst     = ['single', 'full']
+    otype_lst     = ['sgd', 'adam', 'rms']
+    lr_str_lst    = ['1e-1', '1e-2', '1e-3']
+    alpha_str_lst = ['1e-1', '1e1', '1e3']
+    hyper_combs = itertools.product(ctype_lst, btype_lst, otype_lst, lr_str_lst, alpha_str_lst)
+    num_epochs  = NUM_EPOCHS
+    for combine in hyper_combs:
+        ctype, btype, otype, lr_str, alpha_str = combine
+        name = "{}_{}_{}_{}_{}".format(ctype, btype, otype, lr_str, alpha_str)
+        print("==[{}]==".format(name))
+        layers.load_state_dict(init_params)
+        lr, alpha = float(lr_str), float(alpha_str)
+        task = Task(data, layers, ctype, otype, btype, lr=lr, alpha=alpha, seed=model_seed)
+        task.fit_from_rand(num_epochs, root=root, name=name)
 
 
 if __name__ == '__main__':
@@ -1074,5 +1428,17 @@ if __name__ == '__main__':
     np.set_printoptions(precision=8, suppress=True)
     torch.Tensor = torch.DoubleTensor
 
+    # set fit epochs
+    NUM_EPOCHS = 1
+
     # do targeting hyper study
-    MM1K()
+    if len(sys.argv) != 2:
+        print('<mm1k|mmmmr|lbwb>')
+    elif sys.argv[1] == 'mm1k':
+        MM1K()
+    elif sys.argv[1] == 'mmmmr':
+        MMmmr()
+    elif sys.argv[1] == 'lbwb':
+        LBWB()
+    else:
+        raise RuntimeError()

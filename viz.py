@@ -1,160 +1,111 @@
 import torch
+import itertools
+import os
+import numpy as np
 import matplotlib.pyplot as plt
 
 
 r"""
 Visualize
 =========
-- **single_ctype_cfgs** : Visualize results of all configurations for a single ctype
-- **each_ctype_best**   : Visualize results of best configurations for each ctype
 """
 
 
-def single_ctype_cfgs(ctype, warn=True):
-    r"""Visualize results of all configurations for a single ctype
+def traverse_te(root, title, options):
+    r"""Visualize best test results of each visualizing option combination
 
     Args
     ----
-    ctype : str
-        Criterion type.
-    warn : bool
-        Show warning information.
+    root : str
+        Root directory to traverse on.
+    title : str
+        Title for visualization
+    options : [object, ...]
+        A list of options to traverse on.
 
     """
-    # create canvas
-    fig, (ax_tr, ax_te) = plt.subplots(1, 2, figsize=(15, 8))
-    ax_tr.set_title('Train Loss')
-    ax_tr.set_facecolor('silver')
-    ax_tr.set_axisbelow(True)
-    ax_tr.grid(axis='y', linestyle='-', linewidth='0.5', color='white')
-    ax_te.set_title('Test Loss')
-    ax_te.set_facecolor('silver')
-    ax_te.set_axisbelow(True)
-    ax_te.grid(axis='y', linestyle='-', linewidth='0.5', color='white')
+    # construct traverse list
+    vind, all_lst = [], []
+    for i, (opt, flag) in enumerate(options):
+        if flag:
+            vind.append(i)
+        else:
+            pass
+        all_lst.append(opt)
+    all_lst = list(itertools.product(*all_lst))
+
+    # traverse on given list
+    viz_dict = {}
+    for combine in all_lst:
+        name = '_'.join(combine)
+        viz_key = '+'.join([combine[itr] for itr in vind])
+        data = torch.load(os.path.join(root, "{}.pt".format(name)))
+        loss_lst_tr   = data['loss_lst_tr']
+        loss_lst_te   = data['loss_lst_te']
+        ideal_loss_tr = data['ideal_loss_tr']
+        ideal_loss_te = data['ideal_loss_tr']
+        criterion = min(loss_lst_te)
+        if viz_key in viz_dict:
+            if criterion < viz_dict[viz_key][1]:
+                viz_dict[viz_key] = (name, criterion, data)
+            else:
+                pass
+        else:
+            viz_dict[viz_key] = (name, criterion, data)
 
     # set colors
     cmap = plt.get_cmap('gist_rainbow')
-    num = 2 * 3 * 3 * 4
+    num = len(viz_dict)
     colors = [cmap(i / num) for i in range(num)]
 
-    # traverse all combinations
-    cnt = 0
-    max_tr, max_te = None, None
-    min_tr, min_te = None, None
-    line_lst, label_lst = [], []
-    for btype in ('single', 'full'):
-        for otype in ('sgd', 'adam', 'rms'):
-            for lr_str in ('1e-1', '1e-2', '1e-3'):
-                for alpha in (1, 10, 100, 1000):
-                    name = "{}_{}_{}_{}_{}".format(ctype, btype, otype, lr_str, alpha)
-                    try:
-                        lst_tr, lst_te = torch.load("{}_loss_lst.pt".format(name))
-                        idl_tr, idl_te = torch.load("{}_ideal_loss.pt".format(name))
-                    except:
-                        if warn:
-                            print("result <{}> not found".format(name))
-                        else:
-                            pass
-                        continue
-                    int_tr, int_te = lst_tr[0], lst_te[0]
-                    min_tr = idl_tr if min_tr is None else min(min_tr, idl_tr)
-                    min_te = idl_te if min_te is None else min(min_te, idl_te)
-                    max_tr = int_tr if max_tr is None else max(max_tr, int_tr)
-                    max_te = int_te if max_te is None else max(max_te, int_te)
-                    xdata_tr, xdata_te = list(range(len(lst_tr))), list(range(len(lst_te)))
-                    ydata_tr, ydata_te = lst_tr, lst_te
-                    line = ax_tr.plot(xdata_tr, ydata_tr, color=colors[cnt], label=name)[0]
-                    line = ax_te.plot(xdata_te, ydata_te, color=colors[cnt], label=name)[0]
-                    line_lst.append(line)
-                    label_lst.append(name)
-                    cnt += 1
-    ax_tr.axhline(min_tr, color='white', lw=0.5, ls='--')
-    ax_te.axhline(min_te, color='white', lw=0.5, ls='--')
-
-    # reset range
-    range_tr, range_te = max_tr - min_tr, max_te - min_te
-    ax_tr.set_ylim(min_tr - range_tr * 0.05, max_tr + range_tr * 0.05)
-    ax_te.set_ylim(min_te - range_te * 0.05, max_te + range_te * 0.05)
-
-    # legend
-    fig.legend(handles=line_lst, labels=label_lst, loc='lower center', borderaxespad=0.1, ncol=3)
-    fig.subplots_adjust(bottom=0.25)
-    fig.savefig("compare_{}.png".format(ctype))
-
-def each_ctype_best(warn=True):
-    r"""Visualize results of best configurations for each ctype
-
-    Args
-    ----
-    warn : bool
-        Show warning information.
-
-    """
     # create canvas
-    fig, ax = plt.subplots(1, 1, figsize=(9, 6))
-    ax.set_title('Test Loss')
+    ncol = int(np.ceil(float(num) / 18))
+    fig, ax = plt.subplots(1, 1, figsize=(ncol * 2.4 * 4, 6))
+    fig.suptitle(title)
+    ax.set_xlabel('#Epochs')
     ax.set_facecolor('silver')
     ax.set_axisbelow(True)
     ax.grid(axis='y', linestyle='-', linewidth='0.5', color='white')
 
-    # set colors
-    cmap = plt.get_cmap('gist_rainbow')
-    num = 3
-    colors = [cmap(i / num) for i in range(num)]
-
-    # traverse all combinations
-    vmax, vmin = None, None
-    line_lst, label_lst = [], []
-    for i, ctype in enumerate(('mse', 'cond', 'resi')):
-        best_loss, best_name, best_lst, best_idl = None, None, None, None
-        for btype in ('single', 'full'):
-            for otype in ('sgd', 'adam', 'rms'):
-                for lr_str in ('1e-1', '1e-2', '1e-3'):
-                    for alpha in (1, 10, 100, 1000):
-                        name = "{}_{}_{}_{}_{}".format(ctype, btype, otype, lr_str, alpha)
-                        try:
-                            _, lst_te = torch.load("{}_loss_lst.pt".format(name))
-                            _, idl_te = torch.load("{}_ideal_loss.pt".format(name))
-                        except:
-                            if warn:
-                                print("result <{}> no found".format(name))
-                            else:
-                                pass
-                            continue
-                        if best_loss is None or min(lst_te) < best_loss:
-                            best_loss = min(lst_te)
-                            best_name = name
-                            best_lst = lst_te
-                            best_idl = idl_te
-                        else:
-                            pass
-        vmin = best_idl if vmin is None else min(vmin, best_idl)
-        vmax = best_lst[0] if vmax is None else max(vmax, best_lst[0])
-        xdata = list(range(len(best_lst)))
-        ydata = best_lst
-        line = ax.plot(xdata, ydata, color=colors[i], label=best_name)[0]
-        line_lst.append(line)
-        label_lst.append(best_name)
-    ax.axhline(vmin, color='white', lw=0.5, ls='--')
+    # traverse visualization keywords
+    vmax_tr, vmax_te = None, None
+    vmin_tr, vmin_te = None, None
+    for i, (key, (name, _, data)) in enumerate(viz_dict.items()):
+        loss_lst_tr   = data['loss_lst_tr']
+        loss_lst_te   = data['loss_lst_te']
+        ideal_loss_tr = data['ideal_loss_tr']
+        ideal_loss_te = data['ideal_loss_tr']
+        vmax_tr = loss_lst_tr[0] if vmax_tr is None else max(loss_lst_tr[0], vmax_tr)
+        vmax_te = loss_lst_te[0] if vmax_te is None else max(loss_lst_te[0], vmax_te)
+        vmin_tr = ideal_loss_tr if vmin_tr is None else min(ideal_loss_tr, vmin_tr)
+        vmin_te = ideal_loss_te if vmin_te is None else min(ideal_loss_te, vmin_te)
+        xdata_tr = list(range(len(loss_lst_tr)))
+        xdata_te = list(range(len(loss_lst_te)))
+        ydata_tr = loss_lst_tr
+        ydata_te = loss_lst_te
+        line = ax.plot(xdata_te, ydata_te, color=colors[i], label=name)[0]
 
     # reset range
-    vrange = vmax - vmin
-    ax.set_ylim(vmin - vrange * 0.05, vmax + vrange * 0.05)
+    vrange_te = vmax_te - vmin_te
+    ax.set_ylim(vmin_te - vrange_te * 0.05, vmax_te + vrange_te * 0.05)
+    ax.axhline(vmin_te, color='white', lw=0.5, ls='--')
 
     # legend
-    fig.legend(handles=line_lst, labels=label_lst, loc='lower center', borderaxespad=0.1, ncol=3)
-    fig.subplots_adjust(bottom=0.1)
-    fig.savefig('compare.png')
+    box = ax.get_position()
+    ax.set_position([box.x0, box.y0, box.width * 0.75, box.height])
+    ax.legend(loc='center left', bbox_to_anchor=(1, 0.5), ncol=ncol)
+    fig.savefig(os.path.join(root, "compare_{}.png".format(''.join([str(itr) for itr in vind]))))
+
 
 if __name__ == '__main__':
     r"""Main Entrance"""
-    # warning flag
-    warn = False
-
-    # visualize best configuration
-    each_ctype_best(warn=warn)
-
-    # visualize each criterion
-    single_ctype_cfgs('mse' , warn=warn)
-    single_ctype_cfgs('cond', warn=warn)
-    single_ctype_cfgs('resi', warn=warn)
+    # traverse and visualize on given options
+    options = [
+        (['mse', 'cond', 'resi'], True),
+        (['single'], False),
+        (['adam'], False),
+        (['1e-2'], False),
+        (['1e3'], False)]
+    traverse_te('MM1K' , 'Training Loss Functions Compared On Test Loss', options)
+    traverse_te('MMmmr', 'Training Loss Functions Compared On Test Loss', options)
+    traverse_te('LBWB' , 'Training Loss Functions Compared On Test Loss', options)
