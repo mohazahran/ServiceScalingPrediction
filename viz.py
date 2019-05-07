@@ -88,7 +88,7 @@ def traverse_te(root, title, options):
     # reset range
     vrange_te = vmax_te - vmin_te
     ax.set_ylim(vmin_te - vrange_te * 0.05, vmax_te + vrange_te * 0.05)
-    ax.axhline(vmin_te, color='white', lw=0.5, ls='--')
+    ax.axhline(vmin_te, color='black', lw=0.5, ls='--')
 
     # legend
     box = ax.get_position()
@@ -102,10 +102,11 @@ if __name__ == '__main__':
     # traverse and visualize on given options
     options = [
         (['mse', 'cond', 'resi'], True),
-        (['single'], False),
-        (['adam'], False),
-        (['1e-2'], False),
-        (['1e3'], False)]
+        (['single', 'full'], False),
+        (['sgd', 'adam', 'rms'], False),
+        (['1e-1', '1e-2', '1e-3'], False),
+        (['1e-1', '1e1', '1e3'], False)]
     traverse_te('MM1K' , 'Training Loss Functions Compared On Test Loss', options)
     traverse_te('MMmmr', 'Training Loss Functions Compared On Test Loss', options)
     traverse_te('LBWB' , 'Training Loss Functions Compared On Test Loss', options)
+    traverse_te('CIO'  , 'Training Loss Functions Compared On Test Loss', options)

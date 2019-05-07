@@ -703,6 +703,90 @@ class LBWBModule(torch.nn.Module):
         return stdy_dist(X, ind)
 
 
+class CIOModule(torch.nn.Module):
+    r"""Circular Queue Module"""
+    def __init__(self, k, o_i1_01, o_i2_01, i1_o_01, i2_o_01, o2i_proba, noise=True):
+        r"""Initialize the class
+
+        Args
+        ----
+        k : int
+            Number of states. (Number of customers + 1.)
+        o_i1_01 : torch.Tensor
+            01 matrix for output to input 1 transition.
+        o_i2_01 : torch.Tensor
+            01 matrix for output to input 2 transition.
+        i1_o_01 : torch.Tensor
+            01 matrix for input 1 to output transition.
+        i2_o_01 : torch.Tensor
+            01 matrix for input 2 to output transition.
+        o2i_proba : float
+            Probability distribution of output to 1st input buffer.
+        noise : bool
+            Allow noise queue transaction.
+
+        """
+        # super calling
+        torch.nn.Module.__init__(self)
+
+        # save necessary attributes
+        self.k = k
+        self.o_i1_01 = o_i1_01
+        self.o_i2_01 = o_i2_01
+        self.i1_o_01 = i1_o_01
+        self.i2_o_01 = i2_o_01
+        self.o2i_proba = o2i_proba
+
+        # explicitly allocate parameters
+        self.mu = torch.nn.Parameter(torch.Tensor(1))
+        if noise:
+            self.E = torch.nn.Parameter(torch.Tensor(self.k, self.k))
+        else:
+            self.E = None
+
+        # explicitly initialize parameters
+        self.mu.data.fill_(1)
+        if noise:
+            self.E.data.fill_(0)
+        else:
+            pass
+
+    def forward(self, lambd, ind=None):
+        r"""Forwarding
+
+        Args
+        ----
+        lambd : int
+            Input lambda.
+        ind : [int, ...]
+            Focusing steady paired state index.
+
+        Returns
+        -------
+        dist : torch.Tensor
+            Focusing steady state distribution.
+
+        """
+        # generate birth-death vector
+        o_i1s = self.mu * self.o_i1_01 * self.o2i_proba
+        o_i2s = self.mu * self.o_i2_01 * (1 - self.o2i_proba)
+        i1_os = lambd * self.i1_o_01
+        i2_os = lambd * self.i2_o_01
+
+        # get focusing transition matrix
+        if self.E is None:
+            X = o_i1s + o_i2s + i1_os + i2_os
+        else:
+            self.E.data[torch.nonzero(self.o_i1_01)] = 0
+            self.E.data[torch.nonzero(self.o_i2_01)] = 0
+            self.E.data[torch.nonzero(self.i1_o_01)] = 0
+            self.E.data[torch.nonzero(self.i2_o_01)] = 0
+            for i in range(self.k):
+                self.E.data[i, i] = 0
+            X = o_i1s + o_i2s + i1_os + i2_os + self.E
+        return stdy_dist(X, ind)
+
+
 class CondDistLossModule(torch.nn.Module):
     r"""Conditional Steady State Distribution Loss Module"""
     def forward(self, ind, output, pi, obvs):
@@ -822,6 +906,7 @@ Experiment
 - **DataMMmK**   : Dataset for M/M/m/K Queue
 - **DataMMmmr**  : Dataset for M/M/m/m+r Queue
 - **DataLBWB**   : Dataset for Leaky Bucket Web Browsing Queue
+- **DataCIO**    : Dataset for Circular Input/Output Queue
 - **Task**       : Task for All Above Queue Model
 """
 
@@ -1093,14 +1178,179 @@ class DataLBWB(WithRandom):
         return len(self.samples)
 
 
+class DataCIO(WithRandom):
+    r"""Dataset for Circular Input/Output Queue"""
+    def __init__(self, n, in_sz, out_sz, num, const_mu, o2i_proba, epsilon=1e-4,
+                 ind=[(0, 0, 0), (0, 0, 1), (0, 1, 0), (1, 0, 0)], *args, **kargs):
+        r"""Initialize the class
+
+        Args
+        ----
+        n : int
+            Number of samples.
+        in_sz : int
+            Input Buffer size.
+        out_sz : int
+            Output Buffer size.
+        num : int
+            Number of packets existing in the closure.
+        const_mu : int
+            Constant mu (o2i) for output buffer.
+        o2i_proba : float
+            Probability distribution of output to 1st input buffer.
+        epsilon : int
+            Epsilon for noise transition.
+        ind : [int, ...]
+            Focusing state indices.
+
+        """
+        # super call
+        WithRandom.__init__(self, *args, **kargs)
+
+        # save necessary attributes
+        self.in_sz = in_sz
+        self.out_sz = out_sz
+        self.num = num
+        self._mu = torch.Tensor([const_mu])
+        self.o2i_proba = o2i_proba
+        self._epsilon = epsilon
+        self.ind = ind
+
+        # genrate all possible states
+        in1_cand = list(range(in_sz + 1))
+        in2_cand = list(range(in_sz + 1))
+        out_cand = list(range(out_sz + 1))
+        dx_lst = []
+        comb_cand = itertools.product(in1_cand, in2_cand, out_cand)
+        for pair in comb_cand:
+            # parse combination
+            num_in1, num_in2, num_out = pair
+            if num_in1 + num_in2 + num_out == num:
+                pass
+            else:
+                continue
+
+            # input 1 increment
+            if num_in1 + 1 <= in_sz and num_out - 1 >= 0:
+                dx_lst.append((pair, (num_in1 + 1, num_in2, num_out - 1), 'o>i1'))
+            else:
+                pass
+
+            # input 2 increment
+            if num_in2 + 1 <= in_sz and num_out - 1 >= 0:
+                dx_lst.append((pair, (num_in1, num_in2 + 1, num_out - 1), 'o>i2'))
+            else:
+                pass
+
+            # input 1 decrement
+            if num_in1 - 1 >= 0 and num_out + 1 <= out_sz:
+                dx_lst.append((pair, (num_in1 - 1, num_in2, num_out + 1), 'i1>o'))
+            else:
+                pass
+
+            # input 2 decrement
+            if num_in2 - 1 >= 0 and num_out + 1 <= out_sz:
+                dx_lst.append((pair, (num_in1, num_in2 - 1, num_out + 1), 'i2>o'))
+            else:
+                pass
+
+        # assign all possible states with unique indices
+        pair2idx = {}
+        for pair1, pair2, _ in dx_lst:
+            for pair in (pair1, pair2):
+                if pair in pair2idx:
+                    pass
+                else:
+                    pair2idx[pair] = len(pair2idx)
+        self.k = len(pair2idx)
+        self.ind = [pair2idx[itr] for itr in self.ind]
+
+        # construct sharing matrices
+        self.o_i1_01 = torch.Tensor(self.k, self.k)
+        self.o_i2_01 = torch.Tensor(self.k, self.k)
+        self.i1_o_01 = torch.Tensor(self.k, self.k)
+        self.i2_o_01 = torch.Tensor(self.k, self.k)
+        self.o_i1_01.zero_()
+        self.o_i2_01.zero_()
+        self.i1_o_01.zero_()
+        self.i2_o_01.zero_()
+        self.o_i1_01.requires_grad = False
+        self.o_i2_01.requires_grad = False
+        self.i1_o_01.requires_grad = False
+        self.i2_o_01.requires_grad = False
+        for pair1, pair2, dx in dx_lst:
+            idx1, idx2 = pair2idx[pair1], pair2idx[pair2]
+            if dx == 'o>i1':
+                self.o_i1_01[idx1, idx2] = 1
+            elif dx == 'o>i2':
+                self.o_i2_01[idx1, idx2] = 1
+            elif dx == 'i1>o':
+                self.i1_o_01[idx1, idx2] = 1
+            elif dx == 'i2>o':
+                self.i2_o_01[idx1, idx2] = 1
+            else:
+                raise RuntimeError()
+
+        # create death matrix and bucket-birth matrix
+        self._o_i1_mx = self._mu * self.o_i1_01 * self.o2i_proba
+        self._o_i2_mx = self._mu * self.o_i2_01 * (1 - self.o2i_proba)
+
+        # create noise transition
+        self._noise = torch.Tensor(self.k, self.k)
+        self._noise.normal_()
+        for pair1, pair2, dx in dx_lst:
+            idx1, idx2 = pair2idx[pair1], pair2idx[pair2]
+            self._noise[idx1, idx2] = 0
+        for i in range(self.k):
+            self._noise[i, i] = 0
+        self._noise = torch.abs(self._noise)
+        self._noise = self._noise / torch.norm(self._noise) * self._epsilon
+
+        # generate samples
+        self.samples = []
+        lambd_cands = []
+        while len(lambd_cands) < n:
+            lambd_cands.extend(list(range(1, const_mu * 2)))
+        np.random.shuffle(lambd_cands)
+        lambd_cands = lambd_cands[0:n]
+        lambd_cands = sorted(lambd_cands)
+        for const_lambd in lambd_cands:
+            # generate birth-death variable vector
+            _lambd = torch.Tensor([const_lambd])
+            _i1_o_mx = _lambd * self.i1_o_01
+            _i2_o_mx = _lambd * self.i2_o_01
+        
+            # generate ideal birth-death process
+            X = _i1_o_mx + _i2_o_mx + self._o_i1_mx + self._o_i2_mx + self._noise
+            pi = stdy_dist(X)
+            target = stdy_dist(X, self.ind)
+            
+            # sample observations from steady state on ideal birth-death process
+            probas = target.data.numpy()
+            obvs = [stats.poisson.rvs(proba * _lambd) for proba in probas]
+            obvs.append(stats.poisson.rvs((1 - probas.sum()) * _lambd))
+            self.samples.append((_lambd, pi, torch.Tensor(obvs)))
+
+    def __len__(self):
+        r"""Get length of the class
+
+        Returns
+        -------
+        length : int
+            Length of the class.
+
+        """
+        # get length
+        return len(self.samples)
+
+
 class Task(WithRandom):
     r"""Task for All Above Queue Model"""
     # constants
     CTRL_CLS = dict(cond=CondDistLossModule, resi=ResiDistLossModule, mse=DistMSELossModule)
     OPTIM_CLS = dict(sgd=torch.optim.SGD, adam=torch.optim.Adam, rms=torch.optim.RMSprop)
 
-    def __init__(self, data, layers, ctype='cond', otype='adam', ptype='single', lr=0.01, alpha=1000,
-                 *args, **kargs):
+    def __init__(self, data, layers, ctype, otype, ptype, lr, alpha, *args, **kargs):
         r"""Initialize the class
 
         Args
@@ -1288,6 +1538,7 @@ Study
 - **MM1K**  : M/M/1/K Hyper Parameter Study
 - **MMmmr** : M/M/m/m+r Hyper Parameter Study
 - **LBWB**  : Leaky Bucket Web Browsing Hyper Parameter Study
+- **CIO**   : Circular Input/Output Hyper Parameter Study
 """
 
 
@@ -1333,6 +1584,7 @@ def MM1K(data_seed=47, model_seed=47):
         task = Task(data, layers, ctype, otype, btype, lr=lr, alpha=alpha, seed=model_seed)
         task.fit_from_rand(num_epochs, root=root, name=name)
 
+
 def MMmmr(data_seed=47, model_seed=47):
     r"""M/M/m/m+r Hyper Parameter Tuning
 
@@ -1374,6 +1626,7 @@ def MMmmr(data_seed=47, model_seed=47):
         lr, alpha = float(lr_str), float(alpha_str)
         task = Task(data, layers, ctype, otype, btype, lr=lr, alpha=alpha, seed=model_seed)
         task.fit_from_rand(num_epochs, root=root, name=name)
+
 
 def LBWB(data_seed=47, model_seed=47):
     r"""Leaky Bucket Web Browsing Hyper Parameter Tuning
@@ -1422,6 +1675,53 @@ def LBWB(data_seed=47, model_seed=47):
         task.fit_from_rand(num_epochs, root=root, name=name)
 
 
+def CIO(data_seed=47, model_seed=47):
+    r"""Circular Input/Output Hyper Parameter Tuning
+
+    Args
+    ----
+    data_seed : int
+        Random seed for data generation.
+    model_seed : int
+        Random seed for model initializaion and tuning.
+
+    """
+    # clean results folder
+    root = 'CIO'
+    if os.path.isdir(root):
+        shutil.rmtree(root)
+    else:
+        pass
+    os.makedirs(root)
+
+    # generate data
+    data = DataCIO(
+        400, in_sz=3, out_sz=3, num=5, const_mu=25, o2i_proba=0.85, epsilon=1e-4,
+        ind=[(3, 2, 0), (2, 3, 0), (2, 2, 1), (3, 1, 1), (1, 3, 1)], seed=data_seed)
+    layers = CIOModule(
+        k=data.k, o_i1_01=data.o_i1_01, o_i2_01=data.o_i2_01, i1_o_01=data.i1_o_01, i2_o_01=data.i2_o_01,
+        o2i_proba=data.o2i_proba, noise=True)
+    init_params = copy.deepcopy(layers.state_dict())
+    print("#Data: {}".format(len(data)))
+
+    # traverse loss and batch settings
+    ctype_lst     = ['mse', 'cond', 'resi']
+    btype_lst     = ['single', 'full']
+    otype_lst     = ['sgd', 'adam', 'rms']
+    lr_str_lst    = ['1e-1', '1e-2', '1e-3']
+    alpha_str_lst = ['1e-1', '1e1', '1e3']
+    hyper_combs = itertools.product(ctype_lst, btype_lst, otype_lst, lr_str_lst, alpha_str_lst)
+    num_epochs  = NUM_EPOCHS
+    for combine in hyper_combs:
+        ctype, btype, otype, lr_str, alpha_str = combine
+        name = "{}_{}_{}_{}_{}".format(ctype, btype, otype, lr_str, alpha_str)
+        print("==[{}]==".format(name))
+        layers.load_state_dict(init_params)
+        lr, alpha = float(lr_str), float(alpha_str)
+        task = Task(data, layers, ctype, otype, btype, lr=lr, alpha=alpha, seed=model_seed)
+        task.fit_from_rand(num_epochs, root=root, name=name)
+
+
 if __name__ == '__main__':
     r"""Main Entrance"""
     # set precision
@@ -1429,7 +1729,7 @@ if __name__ == '__main__':
     torch.Tensor = torch.DoubleTensor
 
     # set fit epochs
-    NUM_EPOCHS = 1
+    NUM_EPOCHS = 100
 
     # do targeting hyper study
     if len(sys.argv) != 2:
@@ -1440,5 +1740,7 @@ if __name__ == '__main__':
         MMmmr()
     elif sys.argv[1] == 'lbwb':
         LBWB()
+    elif sys.argv[1] == 'cio':
+        CIO()
     else:
         raise RuntimeError()
