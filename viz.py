@@ -3,6 +3,7 @@ import itertools
 import os
 import numpy as np
 import matplotlib.pyplot as plt
+import sys
 
 
 r"""
@@ -26,7 +27,7 @@ def traverse(root, title, options):
     """
     # construct traverse list
     vind, all_lst = [], []
-    for i, (opt, flag) in enumerate(options):
+    for i, (opt, flag, _) in enumerate(options):
         if flag:
             vind.append(i)
         else:
@@ -59,7 +60,7 @@ def traverse(root, title, options):
     colors = [cmap(i / num) for i in range(num)]
 
     # check availability for training loss
-    viz_train = (len(options[2]) == 1)
+    viz_train = (len(options[2][0]) == 1)
 
     # create canvas
     ncol = int(np.ceil(float(num) / 18))
@@ -87,7 +88,7 @@ def traverse(root, title, options):
         loss_lst_tr   = data['loss_lst_tr']
         loss_lst_te   = data['loss_lst_te']
         ideal_loss_tr = data['ideal_loss_tr']
-        ideal_loss_te = data['ideal_loss_tr']
+        ideal_loss_te = data['ideal_loss_te']
         vmax_tr = loss_lst_tr[0] if vmax_tr is None else max(loss_lst_tr[0], vmax_tr)
         vmax_te = loss_lst_te[0] if vmax_te is None else max(loss_lst_te[0], vmax_te)
         vmin_tr = ideal_loss_tr if vmin_tr is None else min(ideal_loss_tr, vmin_tr)
@@ -97,10 +98,10 @@ def traverse(root, title, options):
         ydata_tr = loss_lst_tr
         ydata_te = loss_lst_te
         if viz_train:
-            line = ax_tr.plot(xdata_tr, ydata_tr, color=colors[i], label=name)[0]
+            line = ax_tr.plot(xdata_tr, ydata_tr, color=colors[i], alpha=0.5, label=name)[0]
         else:
             pass
-        line_te = ax_te.plot(xdata_te, ydata_te, color=colors[i], label=name)[0]
+        line_te = ax_te.plot(xdata_te, ydata_te, color=colors[i], alpha=0.5, label=name)[0]
 
     # reset range
     vrange_tr = vmax_tr - vmin_tr
@@ -114,28 +115,74 @@ def traverse(root, title, options):
     ax_te.axhline(vmin_te, color='black', lw=0.5, ls='--')
 
     # legend
-    box = ax_tr.get_position()
-    print(box.x0, box.y0, box.width, box.height)
-    box = ax_te.get_position()
-    print(box.x0, box.y0, box.width, box.height)
-    # // box = ax.get_position()
-    # // ax.set_position([box.x0, box.y0, box.width * 0.75, box.height])
-    # // ax.legend(loc='center left', bbox_to_anchor=(1, 0.5), ncol=ncol)
-    fig.savefig(os.path.join(root, "compare_{}.png".format(''.join([str(itr) for itr in vind]))))
+    if viz_train:
+        box_tr = ax_tr.get_position()
+        ax_tr.set_position([box_tr.x0 * 0.75, box_tr.y0, box_tr.width * 0.75, box_tr.height])
+    else:
+        pass
+    box_te = ax_te.get_position()
+    ax_te.set_position([box_te.x0 * 0.75, box_te.y0, box_te.width * 0.75, box_te.height])
+    ax_te.legend(loc='center left', bbox_to_anchor=(1.05, 0.5), ncol=ncol)
+    name = "{}_{}.png".format(root, ''.join([options[itr][-1] for itr in vind]))
+    fig.savefig(name)
 
 
 if __name__ == '__main__':
     r"""Main Entrance"""
+    # constant options
+    OPTIONS = {
+        'num': (
+            'Hyper Parameter Study on Number of Training Samples',
+            [
+                (['400', '200', '100', '50', '25'], True, 'num'),
+                (['sym'], False, 'rr'),
+                (['resi'], False, 'crit'),
+                (['single'], False, 'bat'),
+                (['adam'], False, 'optim'),
+                (['1e-2'], False, 'lr'),
+                (['1000'], False, 'alpha'),
+            ],
+        ),
+        'alpha': (
+            'Hyper Parameter Study on Number of Regularization',
+            [
+                (['400'], False, 'num'),
+                (['sym'], False, 'rr'),
+                (['resi'], False, 'crit'),
+                (['single'], False, 'bat'),
+                (['adam'], False, 'optim'),
+                (['1e-2'], False, 'lr'),
+                (['0', '1', '1000'], True, 'alpha'),
+            ],
+        ),
+        'rr': (
+            'Hyper Parameter Study on Number of Regularization',
+            [
+                (['400'], False, 'num'),
+                (['sym', 'raw', 'pow'], True, 'rr'),
+                (['resi'], False, 'crit'),
+                (['single'], False, 'bat'),
+                (['adam'], False, 'optim'),
+                (['1e-2'], False, 'lr'),
+                (['1000'], False, 'alpha'),
+            ],
+        ),
+        'crit': (
+            'Hyper Parameter Study on Number of Regularization',
+            [
+                (['400'], False, 'num'),
+                (['sym'], False, 'rr'),
+                (['resi', 'cond', 'mse'], True, 'crit'),
+                (['single'], False, 'bat'),
+                (['adam'], False, 'optim'),
+                (['1e-2'], False, 'lr'),
+                (['1000'], False, 'alpha'),
+            ],
+        ),
+    }
+
+
     # traverse and visualize on given options
-    options = [
-        (['400', '200', '100', '50', '25'], False),
-        (['sym', 'raw', 'pow'], True),
-        (['resi', 'cond', 'mse'], False),
-        (['single', 'full'], False),
-        (['sgd', 'adam', 'rms'], False),
-        (['1e-1', '1e-2', '1e-3'], False),
-        (['0', '1', '1000'], False)]
-    traverse('MM1K' , 'Training Loss Functions Compared On Test Loss', options)
-    # // traverse('MMmmr', 'Training Loss Functions Compared On Test Loss', options)
-    # // traverse('LBWB' , 'Training Loss Functions Compared On Test Loss', options)
-    # // traverse('CIO'  , 'Training Loss Functions Compared On Test Loss', options)
+    root, viz = sys.argv[1:]
+    options = OPTIONS[viz]
+    traverse(root, *options)

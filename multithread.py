@@ -59,13 +59,11 @@ if __name__ == '__main__':
     # traverse all threads
     thread_lst = []
     num_lst       = ['400', '200', '100', '50', '25']
-    dtype_lst     = ['sym', 'raw', 'pow']
-    ctype_lst     = ['resi', 'cond', 'mse']
     alpha_str_lst = ['0', '1', '1000']
-    hyper_combs = itertools.product(num_lst, dtype_lst, ctype_lst, alpha_str_lst)
+    hyper_combs = itertools.product(num_lst, alpha_str_lst)
     for combine in hyper_combs:
-        num, dtype, ctype, alpha_str = combine
-        args = ('python', 'lib.py', task, num, dtype, ctype, alpha_str, hyper)
+        num, alpha_str = combine
+        args = ('python', 'lib.py', task, num, alpha_str, hyper)
         name = '_'.join([str(itr) for itr in args[2:]])
         cmd = ''.join(["{:<7s}".format(str(itr)) for itr in args])
         cmd = "{} 2>&1 > {}".format(cmd, os.path.join('log', "{}.log".format(name)))
