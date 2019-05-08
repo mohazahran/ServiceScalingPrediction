@@ -56,16 +56,16 @@ if __name__ == '__main__':
     # traverse all threads
     thread_lst = []
     num_lst       = ['400', '200', '100', '50', '25']
-    dtype_lst     = ['sym', 'raw', 'pow']
-    ctype_lst     = ['resi', 'cond', 'mse']
-    alpha_str_lst = ['0', '1', '1000']
+    dtype_lst     = ['sym'] # // ['sym', 'raw', 'pow']
+    ctype_lst     = ['resi'] # // ['resi', 'cond', 'mse']
+    alpha_str_lst = ['1000'] # // ['0', '1', '1000']
     hyper_combs = itertools.product(num_lst, dtype_lst, ctype_lst, alpha_str_lst)
     for combine in hyper_combs:
         num, dtype, ctype, alpha_str = combine
         args = ('python', 'lib.py', task, num, dtype, ctype, alpha_str)
         name = '_'.join([str(itr) for itr in args[2:]])
         cmd = ''.join(["{:<7s}".format(str(itr)) for itr in args])
-        cmd = "{} > {} 2>&1".format(cmd, os.path.join('log', "{}.log".format(name)))
+        cmd = "{} 2>&1 | tee {} ".format(cmd, os.path.join('log', "{}.log".format(name)))
         thread_lst.append(LibThread(cmd))
 
     # start and wait all threads

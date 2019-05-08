@@ -43,7 +43,7 @@ def traverse_te(root, title, options):
         loss_lst_tr   = data['loss_lst_tr']
         loss_lst_te   = data['loss_lst_te']
         ideal_loss_tr = data['ideal_loss_tr']
-        ideal_loss_te = data['ideal_loss_tr']
+        ideal_loss_te = data['ideal_loss_te']
         criterion = min(loss_lst_te)
         if viz_key in viz_dict:
             if criterion < viz_dict[viz_key][1]:
@@ -60,7 +60,7 @@ def traverse_te(root, title, options):
 
     # create canvas
     ncol = int(np.ceil(float(num) / 18))
-    fig, ax = plt.subplots(1, 1, figsize=(ncol * 2.4 * 4, 6))
+    fig, ax = plt.subplots(1, 1, figsize=(ncol * 3 * 4, 6))
     fig.suptitle(title)
     ax.set_xlabel('#Epochs')
     ax.set_facecolor('silver')
@@ -101,11 +101,13 @@ if __name__ == '__main__':
     r"""Main Entrance"""
     # traverse and visualize on given options
     options = [
-        (['mse', 'cond', 'resi'], True),
+        (['400', '200', '100', '50', '25'], False),
+        (['sym', 'raw', 'pow'], True),
+        (['resi', 'cond', 'mse'], False),
         (['single', 'full'], False),
         (['sgd', 'adam', 'rms'], False),
         (['1e-1', '1e-2', '1e-3'], False),
-        (['1e-1', '1e1', '1e3'], False)]
+        (['0', '1', '1000'], False)]
     traverse_te('MM1K' , 'Training Loss Functions Compared On Test Loss', options)
     traverse_te('MMmmr', 'Training Loss Functions Compared On Test Loss', options)
     traverse_te('LBWB' , 'Training Loss Functions Compared On Test Loss', options)

@@ -1505,6 +1505,10 @@ class Task(WithRandom):
         # set formatter
         fmt = "[{0:d}]\tTrain: {1:.6f}\tTest: {2:.6f}"
 
+        # get ideal result
+        self.ideal_loss_tr = self.eval_train(ideal=True)
+        self.ideal_loss_te = self.eval_test(ideal=True)
+
         # initialize buffer
         loss_tr = self.eval_train()
         loss_te = self.eval_test()
@@ -1542,17 +1546,13 @@ class Task(WithRandom):
                 print("force to stop by <{}>".format(err))
                 break
 
-        # get ideal result
-        self.ideal_loss_tr = self.eval_train(ideal=True)
-        self.ideal_loss_te = self.eval_test(ideal=True)
-
         # save result
         save_dict = {
             'loss_lst_tr'  : self.loss_lst_tr,
             'loss_lst_te'  : self.loss_lst_te,
             'ideal_loss_tr': self.ideal_loss_tr,
             'ideal_loss_te': self.ideal_loss_te,
-            'paarm'        : self.layers.state_dict(),
+            'param'        : self.layers.state_dict(),
         }
         torch.save(save_dict, os.path.join(root, "{}.pt".format(name)))
 
@@ -1850,7 +1850,7 @@ if __name__ == '__main__':
     TEST_NUM = 400
     DATA_SEED = 47
     MODEL_SEED = 47
-    NUM_EPOCHS = 2
+    NUM_EPOCHS = 100
 
     # parse arguments
     task, num, dtype, ctype, alpha_str = sys.argv[1:]
