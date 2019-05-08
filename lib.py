@@ -400,7 +400,7 @@ class GenericSteadyDist(torch.autograd.Function):
         coeff_P = torch.zeros(k, k, k, k, dtype=dtype, device=device)
         for i in range(k):
             for j in range(k):
-                coeff_P[i, j] = torch.mul(coeff_Q[i, j], gamma) - torch.mul(Q, coeff_gamma[i]) 
+                coeff_P[i, j] = torch.mul(coeff_Q[i, j], gamma) - torch.mul(Q, coeff_gamma[i])
                 coeff_P[i, j] = torch.div(coeff_P[i, j], gamma ** 2)
         coeff_P = coeff_P.view(k * k, k, k)
         return coeff_P
@@ -570,7 +570,7 @@ Rename
 - **stdy_dist**    : **GenericSteadyDist**
 - **bd_stdy_dist** : **BirthDeathSteadyDist**
 - **bd_mat**       : **BirthDeathMat**
-- **bd_shrvec**    : **BirthDeathShareVec**      
+- **bd_shrvec**    : **BirthDeathShareVec**
 """
 
 
@@ -976,7 +976,7 @@ class DistMSELossModule(torch.nn.Module):
         # preprocessing
         output = output[ind]
         target = pi[ind]
-        
+
         # assertion
         assert len(output.size()) == 1 and len(target.size()) == 1
 
@@ -1070,12 +1070,12 @@ class DataMMmK(WithRandom):
             # generate birth-death variable vector
             _lambd = torch.Tensor([const_lambd])
             _lambd_vec = bd_shrvec(_lambd, self.k - 1)
-        
+
             # generate ideal birth-death process
             X = bd_mat(_lambd_vec, self._mu_vec, self._noise)
             pi = stdy_dist_sol(X)
             target = stdy_dist_sol(X, self.ind)
-            
+
             # sample observations from steady state on ideal birth-death process
             probas = target.data.numpy()
             obvs = [stats.poisson.rvs(proba * _lambd) for proba in probas]
@@ -1249,12 +1249,12 @@ class DataLBWB(WithRandom):
             # generate birth-death variable vector
             _lambd = torch.Tensor([const_lambd])
             _lambd_mx = _lambd * self.lambda_01
-        
+
             # generate ideal birth-death process
             X = _lambd_mx + self._lambda_B_mx + self._mu_mx + self._noise
             pi = stdy_dist_sol(X)
             target = stdy_dist_sol(X, self.ind)
-            
+
             # sample observations from steady state on ideal birth-death process
             probas = target.data.numpy()
             obvs = [stats.poisson.rvs(proba * _lambd) for proba in probas]
@@ -1419,12 +1419,12 @@ class DataCIO(WithRandom):
             _lambd = torch.Tensor([const_lambd])
             _i1_o_mx = _lambd * self.i1_o_01
             _i2_o_mx = _lambd * self.i2_o_01
-        
+
             # generate ideal birth-death process
             X = _i1_o_mx + _i2_o_mx + self._o_i1_mx + self._o_i2_mx + self._noise
             pi = stdy_dist_sol(X)
             target = stdy_dist_sol(X, self.ind)
-            
+
             # sample observations from steady state on ideal birth-death process
             probas = target.data.numpy()
             obvs = [stats.poisson.rvs(proba * _lambd) for proba in probas]
@@ -1521,10 +1521,10 @@ class Task(WithRandom):
             try:
                 # shuffle data
                 dind = np.random.permutation(len(self.train_data))
-    
+
                 # train
                 getattr(self, "_{}_ffbp".format(self.ptype))(dind)
-    
+
                 # evaluate
                 loss_tr = self.eval_train()
                 loss_te = self.eval_test()
@@ -1535,7 +1535,7 @@ class Task(WithRandom):
                 else:
                     self.loss_lst_tr.append(loss_tr)
                     self.loss_lst_te.append(loss_te)
-    
+
                 # update best parameters
                 if self.best_loss is None or loss_te < self.best_loss:
                     self.best_loss = loss_te
@@ -1600,7 +1600,7 @@ class Task(WithRandom):
 
     def eval_train(self, ideal=False):
         r"""Evaluate training cases
-        
+
         Args
         ----
         ideal : bool
@@ -1619,7 +1619,7 @@ class Task(WithRandom):
 
     def eval_test(self, ideal=False):
         r"""Evaluate test cases
-        
+
         Args
         ----
         ideal : bool
@@ -1867,7 +1867,7 @@ if __name__ == '__main__':
     assert ctype in ('resi', 'cond', 'mse')
     alpha = float(alpha_str)
     assert hyper in ('quick', 'hyper')
-    hyper = True if hyper else False
+    is_hyper = True if hyper == 'hyper' else False
 
     # do targeting hyper study
     if sys.argv[1] == 'mm1k':
@@ -1881,4 +1881,4 @@ if __name__ == '__main__':
     else:
         raise RuntimeError()
     root = "{}-{}".format(hyper, root)
-    study(root, data, layers, dtype, ctype, alpha_str, seed=MODEL_SEED, hyper_search=hyper)
+    study(root, data, layers, dtype, ctype, alpha_str, seed=MODEL_SEED, hyper_search=is_hyper)
