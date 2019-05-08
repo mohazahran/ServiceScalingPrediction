@@ -128,6 +128,37 @@ def _russian_roulette_sym(P, Pinf, M, dist, *args, **kargs):
     return part1 + part2
 
 
+def _russian_roulette_raw(P, Pinf, M, dist, *args, **kargs):
+    r"""Russian Roulette infinite product summation without infinite split trick
+
+    Args
+    ----
+    P : torch.Tensor
+        Stochastic matrix to apply infinite product summation.
+    Pinf : torch.Tensor
+        Infinite power of input stochastic matrix.
+    M : torch.Tensor
+        Midterm matrix in each term of infinite product summation.
+    dist : scipy.stats.rv_discrete
+        Random variable distribution to sample from for Russian Roulette.
+
+    Returns
+    -------
+    Y : torch.Tensor
+        Infinite product summation result.
+
+    """
+    # get shape setting
+    k = P.size(1)
+
+    # compute expectation with infinity split
+    I = torch.eye(k, dtype=P.dtype, device=P.device)
+    inv = torch.inverse(I - P)
+    part1 = torch.matmul(torch.matmul(Pinf, M), inv)
+    part2 = torch.matmul(torch.matmul(inv, M), Pinf)
+    return part1 + part2
+
+
 def _zero_tridiag(mx):
     r"""Zero-out tridiagonal lines for a matrix
 
@@ -159,6 +190,7 @@ r"""
 Autograd
 ========
 - **GenericSteadyDist**  : Differentiable steady state distribution function for generic queue process
+- **PowerSteadyDist**    : Differentiable steady state distribution function for power method
 - **BirthDeathMat**      : Differentiable construction function for birth-death process matrix
 - **BirthDeathShareVec** : Differentiable construction function for parameter sharing birth-death vector
 """
@@ -168,6 +200,7 @@ class GenericSteadyDist(torch.autograd.Function):
     r"""Differentiable steady state distribution function for generic queue process"""
     # constants
     GEO_P = 0.1
+    RR = None
 
     @staticmethod
     def forward(ctx, X, ind=None, c=0.001, vmin=1e-20, vmax=1, solver=_numpy_solve):
@@ -396,7 +429,7 @@ class GenericSteadyDist(torch.autograd.Function):
         # construct selection gradient coefficient
         Pinf = pi.repeat((k, 1))
         geo_p = GenericSteadyDist.GEO_P
-        coeff_S = _russian_roulette_sym(P, Pinf, coeff_P, stats.geom, geo_p)
+        coeff_S = GenericSteadyDist.RR(P, Pinf, coeff_P, stats.geom, geo_p)
         return coeff_S
 
     @staticmethod
@@ -541,11 +574,67 @@ Rename
 """
 
 
+# complex definition
+def stdy_dist_pow(X, ind=None, c=0.001, vmin=1e-20, vmax=1, *args, **kargs):
+    r"""Steady state distribution by power method
+
+    Args
+    ----
+    X : torch.Tensor
+        Queue matrix.
+    ind : None or int or [int, ...]
+        Specify the indices to select.
+    c : float
+        Uniform normalization offset.
+    vmin : float
+        Lower bound of output dimensions.
+    vmax : float
+        Upper bound of output dimensions.
+
+    Returns
+    -------
+    pi : torch.Tensor
+        Steady state distribution vector.
+
+    """
+    # assertion
+    assert len(X.size()) == 2
+    assert len(torch.nonzero(torch.diagonal(X))) == 0
+
+    # get necessary attributes
+    k = X.size(1)
+    device = X.device
+    ind = [ind] if isinstance(ind, int) else (ind or list(range(k)))
+
+    # get diagonal line for uniform normalization
+    diags = torch.sum(X, dim=1)
+    diags_mx = torch.diagflat(diags)
+
+    # get gamma for uniform normalization
+    gamma, _id = torch.max(diags), torch.argmax(diags)
+    gamma, _id = gamma.item() + c, _id.item()
+
+    # get Q
+    Q = X - diags_mx
+    P = torch.eye(k, dtype=Q.dtype, device=Q.device) + Q / gamma
+
+    # use the power to get pi by linear system
+    E = P
+    for i in range(7):
+        E = torch.matmul(E, E)
+    pi = torch.mean(E, dim=0, keepdim=True)
+    pi = torch.clamp(pi, vmin, vmax).squeeze()
+
+    # return selected distribution
+    return pi[ind]
+
+
 # rename autograd functions
-stdy_dist = GenericSteadyDist.apply
-bd_mat    = BirthDeathMat.apply
-bd_shrvec = BirthDeathShareVec.apply
-mse_loss  = lambda h, y: torch.nn.functional.mse_loss(h, y, reduction='sum')
+stdy_dist_sol = GenericSteadyDist.apply
+stdy_dist     = None
+bd_mat        = BirthDeathMat.apply
+bd_shrvec     = BirthDeathShareVec.apply
+mse_loss      = lambda h, y: torch.nn.functional.mse_loss(h, y, reduction='sum')
 
 
 r"""
@@ -624,7 +713,7 @@ class MMmKModule(torch.nn.Module):
 
 class LBWBModule(torch.nn.Module):
     r"""Leaky Bucket Web Browsing Queue Module"""
-    def __init__(self, k, lambda_01, lambda_B_01, mu_01, c, noise=True):
+    def __init__(self, k, lambda_01, lambda_B_01, mu_01, noise=True):
         r"""Initialize the class
 
         Args
@@ -637,8 +726,6 @@ class LBWBModule(torch.nn.Module):
             01 matrix for lambda[B] transition.
         mu_01 : torch.Tensor
             01 matrix for mu transition.
-        c : int
-            Number of customers.
         noise : bool
             Allow noise queue transaction.
 
@@ -651,7 +738,6 @@ class LBWBModule(torch.nn.Module):
         self.lambda_01 = lambda_01
         self.lambda_B_01 = lambda_B_01
         self.mu_01 = mu_01
-        self.c= c
 
         # explicitly allocate parameters
         self.lambd_B = torch.nn.Parameter(torch.Tensor(1))
@@ -687,7 +773,7 @@ class LBWBModule(torch.nn.Module):
         """
         # generate birth-death vector
         mus = self.mu * self.mu_01
-        lambds = lambd * self.lambda_01 * self.c
+        lambds = lambd * self.lambda_01
         lambd_Bs = self.lambd_B * self.lambda_B_01
 
         # get focusing transition matrix
@@ -930,7 +1016,7 @@ class WithRandom(object):
 
 class DataMMmK(WithRandom):
     r"""Dataset for M/M/m/K Queue"""
-    def __init__(self, n, k, m, const_mu, epsilon=1e-4, ind=[-3, -2], *args, **kargs):
+    def __init__(self, n, k, m, const_mu, epsilon=1e-4, ind=[-3, -2], focus=-1, *args, **kargs):
         r"""Initialize the class
 
         Args
@@ -947,6 +1033,8 @@ class DataMMmK(WithRandom):
             Epsilon for noise transition.
         ind : [int, ...]
             Focusing state indices.
+        focus : int
+            Ultimate focusing state index for test.
 
         """
         # super call
@@ -958,6 +1046,7 @@ class DataMMmK(WithRandom):
         self._mu = torch.Tensor([const_mu])
         self._epsilon = epsilon
         self.ind = ind
+        self.focus = focus
 
         # create death vector
         self._mu_vec = bd_shrvec(self._mu, self.k - 1, self.m)
@@ -984,8 +1073,8 @@ class DataMMmK(WithRandom):
         
             # generate ideal birth-death process
             X = bd_mat(_lambd_vec, self._mu_vec, self._noise)
-            pi = stdy_dist(X)
-            target = stdy_dist(X, self.ind)
+            pi = stdy_dist_sol(X)
+            target = stdy_dist_sol(X, self.ind)
             
             # sample observations from steady state on ideal birth-death process
             probas = target.data.numpy()
@@ -1008,7 +1097,7 @@ class DataMMmK(WithRandom):
 
 class DataMMmmr(DataMMmK):
     r"""Dataset for M/M/m/m+r Queue"""
-    def __init__(self, n, r, m, const_mu, epsilon=1e-4, ind=[0, 1], *args, **kargs):
+    def __init__(self, n, r, m, const_mu, epsilon=1e-4, ind=[0, 1], focus=-1, *args, **kargs):
         r"""Initialize the class
 
         Args
@@ -1025,16 +1114,18 @@ class DataMMmmr(DataMMmK):
             Epsilon for noise transition.
         ind : [int, ...]
             Focusing state indices.
+        focus : int
+            Ultimate focusing state index for test.
 
         """
         # super call
-        DataMMmK.__init__(self, n, m + r, m, const_mu, epsilon, ind, *args, **kargs)
+        DataMMmK.__init__(self, n, m + r, m, const_mu, epsilon, ind, focus, *args, **kargs)
 
 
 class DataLBWB(WithRandom):
     r"""Dataset for Leaky Bucket Web Browsing Queue"""
-    def __init__(self, n, rqst_sz, rsrc_sz, c, const_lambda_B, const_mu, epsilon=1e-4,
-                 ind=[(0, 0), (0, 1), (1, 0)], *args, **kargs):
+    def __init__(self, n, rqst_sz, rsrc_sz, c, const_lambda_B, const_mu, epsilon=1e-4, ind=None, focus=None,
+                 *args, **kargs):
         r"""Initialize the class
 
         Args
@@ -1053,8 +1144,10 @@ class DataLBWB(WithRandom):
             Constant mu.
         epsilon : int
             Epsilon for noise transition.
-        ind : [int, ...]
+        ind : [tuple, ...]
             Focusing state indices.
+        focus : tuple
+            Ultimate focusing state index for test.
 
         """
         # super call
@@ -1063,11 +1156,11 @@ class DataLBWB(WithRandom):
         # save necessary attributes
         self.rqst_sz = rqst_sz
         self.rsrc_sz = rsrc_sz
-        self.c = c
         self._lambda_B = torch.Tensor([const_lambda_B])
         self._mu = torch.Tensor([const_mu])
         self._epsilon = epsilon
         self.ind = ind
+        self.focus = focus
 
         # genrate all possible states
         dx_lst = []
@@ -1104,6 +1197,7 @@ class DataLBWB(WithRandom):
                     pair2idx[pair] = len(pair2idx)
         self.k = len(pair2idx)
         self.ind = [pair2idx[itr] for itr in self.ind]
+        self.focus = pair2idx[self.focus]
 
         # construct sharing matrices
         self.lambda_01 = torch.Tensor(self.k, self.k)
@@ -1118,13 +1212,15 @@ class DataLBWB(WithRandom):
         for pair1, pair2, dx in dx_lst:
             idx1, idx2 = pair2idx[pair1], pair2idx[pair2]
             if dx == 'lambda':
-                self.lambda_01[idx1, idx2] = 1
+                self.lambda_01[idx1, idx2] = max(0, c - pair1[0])
             elif dx == 'lambda[B]':
                 self.lambda_B_01[idx1, idx2] = 1
             elif dx == 'mu':
                 self.mu_01[idx1, idx2] = 1
             else:
                 raise RuntimeError()
+        # // print(self.lambda_01.data.numpy())
+        # // exit()
 
         # create death matrix and bucket-birth matrix
         self._lambda_B_mx = self._lambda_B * self.lambda_B_01
@@ -1152,12 +1248,12 @@ class DataLBWB(WithRandom):
         for const_lambd in lambd_cands:
             # generate birth-death variable vector
             _lambd = torch.Tensor([const_lambd])
-            _lambd_mx = _lambd * self.lambda_01 * self.c
+            _lambd_mx = _lambd * self.lambda_01
         
             # generate ideal birth-death process
             X = _lambd_mx + self._lambda_B_mx + self._mu_mx + self._noise
-            pi = stdy_dist(X)
-            target = stdy_dist(X, self.ind)
+            pi = stdy_dist_sol(X)
+            target = stdy_dist_sol(X, self.ind)
             
             # sample observations from steady state on ideal birth-death process
             probas = target.data.numpy()
@@ -1180,8 +1276,8 @@ class DataLBWB(WithRandom):
 
 class DataCIO(WithRandom):
     r"""Dataset for Circular Input/Output Queue"""
-    def __init__(self, n, in_sz, out_sz, num, const_mu, o2i_proba, epsilon=1e-4,
-                 ind=[(0, 0, 0), (0, 0, 1), (0, 1, 0), (1, 0, 0)], *args, **kargs):
+    def __init__(self, n, in_sz, out_sz, num, const_mu, o2i_proba, epsilon=1e-4, ind=None, focus=None,
+                 *args, **kargs):
         r"""Initialize the class
 
         Args
@@ -1200,8 +1296,10 @@ class DataCIO(WithRandom):
             Probability distribution of output to 1st input buffer.
         epsilon : int
             Epsilon for noise transition.
-        ind : [int, ...]
+        ind : [tuple, ...]
             Focusing state indices.
+        focus : int
+            Ultimate focusing state index for test.
 
         """
         # super call
@@ -1215,6 +1313,7 @@ class DataCIO(WithRandom):
         self.o2i_proba = o2i_proba
         self._epsilon = epsilon
         self.ind = ind
+        self.focus = focus
 
         # genrate all possible states
         in1_cand = list(range(in_sz + 1))
@@ -1264,6 +1363,7 @@ class DataCIO(WithRandom):
                     pair2idx[pair] = len(pair2idx)
         self.k = len(pair2idx)
         self.ind = [pair2idx[itr] for itr in self.ind]
+        self.focus = pair2idx[focus]
 
         # construct sharing matrices
         self.o_i1_01 = torch.Tensor(self.k, self.k)
@@ -1322,8 +1422,8 @@ class DataCIO(WithRandom):
         
             # generate ideal birth-death process
             X = _i1_o_mx + _i2_o_mx + self._o_i1_mx + self._o_i2_mx + self._noise
-            pi = stdy_dist(X)
-            target = stdy_dist(X, self.ind)
+            pi = stdy_dist_sol(X)
+            target = stdy_dist_sol(X, self.ind)
             
             # sample observations from steady state on ideal birth-death process
             probas = target.data.numpy()
@@ -1350,13 +1450,15 @@ class Task(WithRandom):
     CTRL_CLS = dict(cond=CondDistLossModule, resi=ResiDistLossModule, mse=DistMSELossModule)
     OPTIM_CLS = dict(sgd=torch.optim.SGD, adam=torch.optim.Adam, rms=torch.optim.RMSprop)
 
-    def __init__(self, data, layers, ctype, otype, ptype, lr, alpha, *args, **kargs):
+    def __init__(self, train_data, test_data, layers, ctype, otype, ptype, lr, alpha, *args, **kargs):
         r"""Initialize the class
 
         Args
         ----
-        data : object
-            Dataset.
+        train_data : object
+            Train dataset.
+        test_data : object
+            Test dataset.
         layers : torch.nn.Module
             Neural network module to tune.
         ctype : str
@@ -1381,7 +1483,8 @@ class Task(WithRandom):
         self.alpha = alpha
 
         # allocate necessary attributes
-        self.data = data
+        self.train_data = train_data
+        self.test_data = test_data
         self.layers = layers
         self.criterion = self.CTRL_CLS[ctype]()
         self.optimizer = self.OPTIM_CLS[otype](self.layers.parameters(), lr=self.lr)
@@ -1413,11 +1516,11 @@ class Task(WithRandom):
         for epc in range(1, num_epochs + 1):
             try:
                 # shuffle data
-                dind = np.random.permutation(len(self.data))
-            
+                dind = np.random.permutation(len(self.train_data))
+    
                 # train
                 getattr(self, "_{}_ffbp".format(self.ptype))(dind)
-            
+    
                 # evaluate
                 loss_tr = self.eval_train()
                 loss_te = self.eval_test()
@@ -1428,7 +1531,7 @@ class Task(WithRandom):
                 else:
                     self.loss_lst_tr.append(loss_tr)
                     self.loss_lst_te.append(loss_te)
-        
+    
                 # update best parameters
                 if self.best_loss is None or loss_te < self.best_loss:
                     self.best_loss = loss_te
@@ -1465,11 +1568,12 @@ class Task(WithRandom):
         # forward and backward
         for idx in ind:
             self.optimizer.zero_grad()
-            lambd, pi, obvs = self.data.samples[idx]
+            lambd, pi, obvs = self.train_data.samples[idx]
             output = self.layers.forward(lambd)
-            loss = self.criterion.forward(self.data.ind, output, pi, obvs)
+            loss = self.criterion.forward(self.train_data.ind, output, pi, obvs)
             loss = loss + self.alpha * torch.norm(self.layers.E)
             loss.backward()
+            torch.nn.utils.clip_grad_norm_(self.layers.parameters(), 5)
             self.optimizer.step()
 
     def _full_ffbp(self, ind):
@@ -1485,12 +1589,13 @@ class Task(WithRandom):
         self.optimizer.zero_grad()
         loss_lst = []
         for idx in ind:
-            lambd, pi, obvs = self.data.samples[idx]
+            lambd, pi, obvs = self.train_data.samples[idx]
             output = self.layers.forward(lambd)
-            loss = self.criterion.forward(self.data.ind, output, pi, obvs)
+            loss = self.criterion.forward(self.train_data.ind, output, pi, obvs)
             loss_lst.append(loss)
         loss = sum(loss_lst) + self.alpha * torch.norm(self.layers.E)
         loss.backward()
+        torch.nn.utils.clip_grad_norm_(self.layers.parameters(), 5)
         self.optimizer.step()
 
     def eval_train(self, ideal=False):
@@ -1504,10 +1609,10 @@ class Task(WithRandom):
         """
         # forward
         loss_lst = []
-        for i in range(len(self.data)):
-            lambd, pi, obvs = self.data.samples[i]
+        for i in range(len(self.train_data)):
+            lambd, pi, obvs = self.train_data.samples[i]
             output = pi if ideal else self.layers.forward(lambd)
-            loss = self.criterion.forward(self.data.ind, output, pi, obvs)
+            loss = self.criterion.forward(self.train_data.ind, output, pi, obvs)
             loss_lst.append(loss)
         loss = sum(loss_lst) / len(loss_lst)
         return loss.data.item()
@@ -1523,10 +1628,11 @@ class Task(WithRandom):
         """
         # forward
         loss_lst = []
-        for i in range(len(self.data)):
-            lambd, pi, obvs = self.data.samples[i]
+        for i in range(len(self.test_data)):
+            lambd, pi, obvs = self.test_data.samples[i]
+            focus = self.test_data.focus
             output = pi if ideal else self.layers.forward(lambd)
-            loss = mse_loss(output[-1], pi[-1])
+            loss = mse_loss(output[focus], pi[focus])
             loss_lst.append(loss)
         loss = sum(loss_lst) / len(loss_lst)
         return loss.data.item()
@@ -1539,186 +1645,198 @@ Study
 - **MMmmr** : M/M/m/m+r Hyper Parameter Study
 - **LBWB**  : Leaky Bucket Web Browsing Hyper Parameter Study
 - **CIO**   : Circular Input/Output Hyper Parameter Study
+- **study** : Study hyper parameters
 """
 
 
-def MM1K(data_seed=47, model_seed=47):
-    r"""M/M/1/K Hyper Parameter Tuning
+def mm1k(num, seed):
+    r"""Generate M/M/1/K Data and Model
 
     Args
     ----
-    data_seed : int
-        Random seed for data generation.
-    model_seed : int
-        Random seed for model initializaion and tuning.
+    num : int
+        Number of samples
+    seed : int
+        Random seed
+
+    Returns
+    -------
+    root : str
+        Root directory.
+    data : object
+        Dataset.
+    layers : torch.nn.Module
+        Neural network layers.
 
     """
-    # clean results folder
-    root = 'MM1K'
-    if os.path.isdir(root):
-        shutil.rmtree(root)
-    else:
-        pass
-    os.makedirs(root)
-
     # generate data
-    data = DataMMmK(400, k=6, m=1, const_mu=25, epsilon=1e-4, ind=[-3, -2], seed=data_seed)
+    kargs = dict(
+        k=6, m=1, const_mu=25, epsilon=1e-4, ind=[-3, -2], focus=-1)
+    data = DataMMmK(num, seed=seed, **kargs)
+    test_data = DataMMmK(TEST_NUM, seed=seed + 1, **kargs)
+    layers = MMmKModule(
+        k=data.k, m=data.m, noise=True)
+    return 'mm1k', (data, test_data), layers
+
+
+def mmmmr(num, seed):
+    r"""Generate M/M/m/m+r Data and Model
+
+    Args
+    ----
+    num : int
+        Number of samples
+    seed : int
+        Random seed
+
+    Returns
+    -------
+    root : str
+        Root directory.
+    data : object
+        Dataset.
+    layers : torch.nn.Module
+        Neural network layers.
+
+    """
+    # generate data
+    kargs = dict(
+        r=2, m=4, const_mu=25, epsilon=1e-4, ind=[0, 1], focus=-1)
+    data = DataMMmmr(num, seed=seed, **kargs)
+    test_data = DataMMmmr(TEST_NUM, seed=seed + 1, **kargs)
     layers = MMmKModule(k=data.k, m=data.m, noise=True)
-    init_params = copy.deepcopy(layers.state_dict())
-    print("#Data: {}".format(len(data)))
-
-    # traverse loss and batch settings
-    ctype_lst     = ['mse', 'cond', 'resi']
-    btype_lst     = ['single', 'full']
-    otype_lst     = ['sgd', 'adam', 'rms']
-    lr_str_lst    = ['1e-1', '1e-2', '1e-3']
-    alpha_str_lst = ['1e-1', '1e1', '1e3']
-    hyper_combs = itertools.product(ctype_lst, btype_lst, otype_lst, lr_str_lst, alpha_str_lst)
-    num_epochs  = NUM_EPOCHS
-    for combine in hyper_combs:
-        ctype, btype, otype, lr_str, alpha_str = combine
-        name = "{}_{}_{}_{}_{}".format(ctype, btype, otype, lr_str, alpha_str)
-        print("==[{}]==".format(name))
-        layers.load_state_dict(init_params)
-        lr, alpha = float(lr_str), float(alpha_str)
-        task = Task(data, layers, ctype, otype, btype, lr=lr, alpha=alpha, seed=model_seed)
-        task.fit_from_rand(num_epochs, root=root, name=name)
+    return 'mmmmr', (data, test_data), layers
 
 
-def MMmmr(data_seed=47, model_seed=47):
-    r"""M/M/m/m+r Hyper Parameter Tuning
+def lbwb(num, seed):
+    r"""Generate Leaky Bucket Web Browsing Data and Model
 
     Args
     ----
-    data_seed : int
-        Random seed for data generation.
-    model_seed : int
-        Random seed for model initializaion and tuning.
+    num : int
+        Number of samples
+    seed : int
+        Random seed
+
+    Returns
+    -------
+    root : str
+        Root directory.
+    data : object
+        Dataset.
+    layers : torch.nn.Module
+        Neural network layers.
 
     """
-    # clean results folder
-    root = 'MMmmr'
-    if os.path.isdir(root):
-        shutil.rmtree(root)
-    else:
-        pass
-    os.makedirs(root)
-
     # generate data
-    data = DataMMmmr(400, r=2, m=4, const_mu=25, epsilon=1e-4, ind=[0, 1], seed=data_seed)
-    layers = MMmKModule(k=data.k, m=data.m, noise=True)
-    init_params = copy.deepcopy(layers.state_dict())
-    print("#Data: {}".format(len(data)))
-
-    # traverse loss and batch settings
-    ctype_lst     = ['mse', 'cond', 'resi']
-    btype_lst     = ['single', 'full']
-    otype_lst     = ['sgd', 'adam', 'rms']
-    lr_str_lst    = ['1e-1', '1e-2', '1e-3']
-    alpha_str_lst = ['1e-1', '1e1', '1e3']
-    hyper_combs = itertools.product(ctype_lst, btype_lst, otype_lst, lr_str_lst, alpha_str_lst)
-    num_epochs  = NUM_EPOCHS
-    for combine in hyper_combs:
-        ctype, btype, otype, lr_str, alpha_str = combine
-        name = "{}_{}_{}_{}_{}".format(ctype, btype, otype, lr_str, alpha_str)
-        print("==[{}]==".format(name))
-        layers.load_state_dict(init_params)
-        lr, alpha = float(lr_str), float(alpha_str)
-        task = Task(data, layers, ctype, otype, btype, lr=lr, alpha=alpha, seed=model_seed)
-        task.fit_from_rand(num_epochs, root=root, name=name)
-
-
-def LBWB(data_seed=47, model_seed=47):
-    r"""Leaky Bucket Web Browsing Hyper Parameter Tuning
-
-    Args
-    ----
-    data_seed : int
-        Random seed for data generation.
-    model_seed : int
-        Random seed for model initializaion and tuning.
-
-    """
-    # clean results folder
-    root = 'LBWB'
-    if os.path.isdir(root):
-        shutil.rmtree(root)
-    else:
-        pass
-    os.makedirs(root)
-
-    # generate data
-    data = DataLBWB(
-        400, rqst_sz=3, rsrc_sz=3, c=3, const_lambda_B=15, const_mu=25, epsilon=1e-4,
-        ind=[(0, 0), (0, 1), (1, 0)], seed=data_seed)
+    kargs = dict(
+        rqst_sz=3, rsrc_sz=3, c=3, const_lambda_B=15, const_mu=25, epsilon=1e-4,
+        ind=[(0, 0), (0, 1), (1, 0)], focus=(3, 0))
+    data = DataLBWB(num, seed=seed, **kargs)
+    test_data = DataLBWB(TEST_NUM, seed=seed + 1, **kargs)
     layers = LBWBModule(
-        k=data.k, lambda_01=data.lambda_01, lambda_B_01=data.lambda_B_01, mu_01=data.mu_01, c=data.c,
+        k=data.k, lambda_01=data.lambda_01, lambda_B_01=data.lambda_B_01, mu_01=data.mu_01,
         noise=True)
-    init_params = copy.deepcopy(layers.state_dict())
-    print("#Data: {}".format(len(data)))
-
-    # traverse loss and batch settings
-    ctype_lst     = ['mse', 'cond', 'resi']
-    btype_lst     = ['single', 'full']
-    otype_lst     = ['sgd', 'adam', 'rms']
-    lr_str_lst    = ['1e-1', '1e-2', '1e-3']
-    alpha_str_lst = ['1e-1', '1e1', '1e3']
-    hyper_combs = itertools.product(ctype_lst, btype_lst, otype_lst, lr_str_lst, alpha_str_lst)
-    num_epochs  = NUM_EPOCHS
-    for combine in hyper_combs:
-        ctype, btype, otype, lr_str, alpha_str = combine
-        name = "{}_{}_{}_{}_{}".format(ctype, btype, otype, lr_str, alpha_str)
-        print("==[{}]==".format(name))
-        layers.load_state_dict(init_params)
-        lr, alpha = float(lr_str), float(alpha_str)
-        task = Task(data, layers, ctype, otype, btype, lr=lr, alpha=alpha, seed=model_seed)
-        task.fit_from_rand(num_epochs, root=root, name=name)
+    return 'lbwb', (data, test_data), layers
 
 
-def CIO(data_seed=47, model_seed=47):
-    r"""Circular Input/Output Hyper Parameter Tuning
+def cio(num, seed):
+    r"""Generate Circular Input/Output Data and Model
 
     Args
     ----
-    data_seed : int
-        Random seed for data generation.
-    model_seed : int
-        Random seed for model initializaion and tuning.
+    num : int
+        Number of samples
+    seed : int
+        Random seed
+
+    Returns
+    -------
+    root : str
+        Root directory.
+    data : object
+        Dataset.
+    layers : torch.nn.Module
+        Neural network layers.
+
+    """
+    # generate data
+    kargs = dict(
+        in_sz=3, out_sz=3, num=5, const_mu=25, o2i_proba=0.85, epsilon=1e-4,
+        ind=[(3, 2, 0), (2, 3, 0), (2, 2, 1), (3, 1, 1), (1, 3, 1)],
+        focus=(1, 1, 3))
+    data = DataCIO(num, seed=seed, **kargs)
+    test_data = DataCIO(TEST_NUM, seed=seed + 1, **kargs)
+    layers = CIOModule(
+        k=data.k, o_i1_01=data.o_i1_01, o_i2_01=data.o_i2_01, i1_o_01=data.i1_o_01,
+        i2_o_01=data.i2_o_01, o2i_proba=data.o2i_proba, noise=True)
+    return 'cio', (data, test_data), layers
+
+
+def study(root, data, layers, cand_d, cand_c, cand_a, seed=47):
+    r"""Hyper Parameter Study
+
+    Args
+    ----
+    root : str
+        Root directory.
+    data : object
+        Dataset.
+    layers : torch.nn.Module
+        Neural network layers.
+    cand_d : str
+        Steady state distribution method candidate.
+    cand_c : str
+        Criterion candidate.
+    cand_a : str
+        Alpha string candidate.
+    seed : int
+        Random seed.
 
     """
     # clean results folder
-    root = 'CIO'
     if os.path.isdir(root):
-        shutil.rmtree(root)
-    else:
         pass
-    os.makedirs(root)
+    else:
+        os.makedirs(root)
 
-    # generate data
-    data = DataCIO(
-        400, in_sz=3, out_sz=3, num=5, const_mu=25, o2i_proba=0.85, epsilon=1e-4,
-        ind=[(3, 2, 0), (2, 3, 0), (2, 2, 1), (3, 1, 1), (1, 3, 1)], seed=data_seed)
-    layers = CIOModule(
-        k=data.k, o_i1_01=data.o_i1_01, o_i2_01=data.o_i2_01, i1_o_01=data.i1_o_01, i2_o_01=data.i2_o_01,
-        o2i_proba=data.o2i_proba, noise=True)
+    # save initial parameters
+    len_data = len(data[0])
     init_params = copy.deepcopy(layers.state_dict())
-    print("#Data: {}".format(len(data)))
+
+    # some other settings
+    rr_dict = dict(sym=_russian_roulette_sym, raw=_russian_roulette_raw)
+    stdy_dict = dict(sol=stdy_dist_sol, pow=stdy_dist_pow)
 
     # traverse loss and batch settings
-    ctype_lst     = ['mse', 'cond', 'resi']
-    btype_lst     = ['single', 'full']
-    otype_lst     = ['sgd', 'adam', 'rms']
-    lr_str_lst    = ['1e-1', '1e-2', '1e-3']
-    alpha_str_lst = ['1e-1', '1e1', '1e3']
-    hyper_combs = itertools.product(ctype_lst, btype_lst, otype_lst, lr_str_lst, alpha_str_lst)
+    comb_cands = []
+    comb_cands.append([cand_d])
+    comb_cands.append([cand_c])
+    comb_cands.append(['single', 'full'])
+    comb_cands.append(['adam', 'sgd', 'rms'])
+    comb_cands.append(['1e-1', '1e-2', '1e-3'])
+    comb_cands.append([cand_a])
+    hyper_combs = itertools.product(*comb_cands)
     num_epochs  = NUM_EPOCHS
     for combine in hyper_combs:
-        ctype, btype, otype, lr_str, alpha_str = combine
-        name = "{}_{}_{}_{}_{}".format(ctype, btype, otype, lr_str, alpha_str)
+        dtype, ctype, btype, otype, lr_str, alpha_str = combine
+        name = "{}_{}_{}_{}_{}_{}_{}".format(len_data, *combine)
         print("==[{}]==".format(name))
+        global stdy_dist
+        if dtype == 'sym':
+            GenericSteadyDist.RR = _russian_roulette_sym
+            stdy_dist = stdy_dist_sol
+        elif dtype == 'raw':
+            GenericSteadyDist.RR = _russian_roulette_raw
+            stdy_dist = stdy_dist_sol
+        elif dtype == 'pow':
+            GenericSteadyDist.RR = None
+            stdy_dist = stdy_dist_pow
+        else:
+            raise RuntimeError()
         layers.load_state_dict(init_params)
         lr, alpha = float(lr_str), float(alpha_str)
-        task = Task(data, layers, ctype, otype, btype, lr=lr, alpha=alpha, seed=model_seed)
+        task = Task(data[0], data[1], layers, ctype, otype, btype, lr=lr, alpha=alpha, seed=seed)
         task.fit_from_rand(num_epochs, root=root, name=name)
 
 
@@ -1729,18 +1847,28 @@ if __name__ == '__main__':
     torch.Tensor = torch.DoubleTensor
 
     # set fit epochs
-    NUM_EPOCHS = 100
+    TEST_NUM = 400
+    DATA_SEED = 47
+    MODEL_SEED = 47
+    NUM_EPOCHS = 2
+
+    # parse arguments
+    task, num, dtype, ctype, alpha_str = sys.argv[1:]
+    assert task in ('mm1k', 'mmmmr', 'lbwb', 'cio')
+    num = int(num)
+    assert dtype in ('sym', 'raw', 'pow')
+    assert ctype in ('resi', 'cond', 'mse')
+    alpha = float(alpha_str)
 
     # do targeting hyper study
-    if len(sys.argv) != 2:
-        print('<mm1k|mmmmr|lbwb>')
-    elif sys.argv[1] == 'mm1k':
-        MM1K()
+    if sys.argv[1] == 'mm1k':
+        root, data, layers = mm1k(num, seed=DATA_SEED)
     elif sys.argv[1] == 'mmmmr':
-        MMmmr()
+        root, data, layers = mmmmr(num, seed=DATA_SEED)
     elif sys.argv[1] == 'lbwb':
-        LBWB()
+        root, data, layers = lbwb(num, seed=DATA_SEED)
     elif sys.argv[1] == 'cio':
-        CIO()
+        root, data, layers = cio(num, seed=DATA_SEED)
     else:
         raise RuntimeError()
+    study(root, data, layers, dtype, ctype, alpha_str, seed=MODEL_SEED)
