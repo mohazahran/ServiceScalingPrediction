@@ -39,7 +39,9 @@ class LibThread(threading.Thread):
 if __name__ == '__main__':
     r"""Main Entrance"""
     # parse arguments
-    task, = sys.argv[1:]
+    task, hyper = sys.argv[1:]
+    assert task in ('mm1k', 'mmmmr', 'lbwb', 'cio')
+    assert hyper in ('quick', 'hyper')
 
     # ensure logging folder
     if os.path.isdir('log'):
@@ -62,10 +64,10 @@ if __name__ == '__main__':
     hyper_combs = itertools.product(num_lst, dtype_lst, ctype_lst, alpha_str_lst)
     for combine in hyper_combs:
         num, dtype, ctype, alpha_str = combine
-        args = ('python', 'lib.py', task, num, dtype, ctype, alpha_str)
+        args = ('python', 'lib.py', task, num, dtype, ctype, alpha_str, hyper)
         name = '_'.join([str(itr) for itr in args[2:]])
         cmd = ''.join(["{:<7s}".format(str(itr)) for itr in args])
-        cmd = "{} 2>&1 | tee {} ".format(cmd, os.path.join('log', "{}.log".format(name)))
+        cmd = "{} 2>&1 > {}".format(cmd, os.path.join('log', "{}.log".format(name)))
         thread_lst.append(LibThread(cmd))
 
     # start and wait all threads

@@ -1773,7 +1773,7 @@ def cio(num, seed):
     return 'cio', (data, test_data), layers
 
 
-def study(root, data, layers, cand_d, cand_c, cand_a, seed=47):
+def study(root, data, layers, cand_d, cand_c, cand_a, seed=47, hyper_search=False):
     r"""Hyper Parameter Study
 
     Args
@@ -1792,6 +1792,8 @@ def study(root, data, layers, cand_d, cand_c, cand_a, seed=47):
         Alpha string candidate.
     seed : int
         Random seed.
+    hyper_search : bool
+        Do hyper parameter grid search.
 
     """
     # clean results folder
@@ -1812,9 +1814,14 @@ def study(root, data, layers, cand_d, cand_c, cand_a, seed=47):
     comb_cands = []
     comb_cands.append([cand_d])
     comb_cands.append([cand_c])
-    comb_cands.append(['single', 'full'])
-    comb_cands.append(['adam', 'sgd', 'rms'])
-    comb_cands.append(['1e-1', '1e-2', '1e-3'])
+    if hyper_search:
+        comb_cands.append(['single', 'full'])
+        comb_cands.append(['adam', 'sgd', 'rms'])
+        comb_cands.append(['1e-1', '1e-2', '1e-3'])
+    else:
+        comb_cands.append(['single'])
+        comb_cands.append(['adam'])
+        comb_cands.append(['1e-2'])
     comb_cands.append([cand_a])
     hyper_combs = itertools.product(*comb_cands)
     num_epochs  = NUM_EPOCHS
@@ -1853,12 +1860,14 @@ if __name__ == '__main__':
     NUM_EPOCHS = 100
 
     # parse arguments
-    task, num, dtype, ctype, alpha_str = sys.argv[1:]
+    task, num, dtype, ctype, alpha_str, hyper = sys.argv[1:]
     assert task in ('mm1k', 'mmmmr', 'lbwb', 'cio')
     num = int(num)
     assert dtype in ('sym', 'raw', 'pow')
     assert ctype in ('resi', 'cond', 'mse')
     alpha = float(alpha_str)
+    assert hyper in ('quick', 'hyper')
+    hyper = True if hyper else False
 
     # do targeting hyper study
     if sys.argv[1] == 'mm1k':
@@ -1871,4 +1880,5 @@ if __name__ == '__main__':
         root, data, layers = cio(num, seed=DATA_SEED)
     else:
         raise RuntimeError()
-    study(root, data, layers, dtype, ctype, alpha_str, seed=MODEL_SEED)
+    root = "{}-{}".format(hyper, root)
+    study(root, data, layers, dtype, ctype, alpha_str, seed=MODEL_SEED, hyper_search=hyper)
