@@ -50,10 +50,11 @@ if __name__ == '__main__':
         os.makedirs('log')
 
     # ensure task result folder
-    if os.path.isdir(task):
+    root = "{}-{}".format(hyper, task)
+    if os.path.isdir(root):
         pass
     else:
-        os.makedirs(task)
+        os.makedirs(root)
 
     # traverse all threads
     thread_lst = []
