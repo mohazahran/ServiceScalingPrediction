@@ -39,7 +39,8 @@ class LibThread(threading.Thread):
 if __name__ == '__main__':
     r"""Main Entrance"""
     # parse arguments
-    task, hyper = sys.argv[1:]
+    holder, task, hyper = sys.argv[1:]
+    assert holder in ('lib.py', 'press.py')
     assert task in ('mm1k', 'mmmmr', 'lbwb', 'cio')
     assert hyper in ('quick', 'hyper')
 
@@ -58,14 +59,14 @@ if __name__ == '__main__':
 
     # traverse all threads
     thread_lst = []
-    num_lst       = ['400', '200', '100', '50', '25']
+    num_lst       = ['1'] # // ['400', '200', '100', '50', '25']
     alpha_str_lst = ['0', '1', '1000']
     hyper_combs = itertools.product(num_lst, alpha_str_lst)
     for combine in hyper_combs:
         num, alpha_str = combine
-        args = ('python', 'lib.py', task, num, alpha_str, hyper)
+        args = ('python', holder, task, num, alpha_str, hyper)
         name = '_'.join([str(itr) for itr in args[2:]])
-        cmd = ''.join(["{:<7s}".format(str(itr)) for itr in args])
+        cmd = ' '.join(["{:<8s}".format(str(itr)) for itr in args])
         cmd = "{} 2>&1 > {}".format(cmd, os.path.join('log', "{}.log".format(name)))
         thread_lst.append(LibThread(cmd))
 

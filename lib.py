@@ -4,6 +4,7 @@ import torch
 import time
 import re
 import copy
+import traceback
 import os
 import shutil
 import itertools
@@ -45,26 +46,6 @@ def _numpy_solve(A, b):
     return x
 
 
-def _torch_solve(A, b):
-    r"""Solve Ax = b by torch
-
-    Args
-    ----
-    A : torch.Tensor
-        Right matrix.
-    b : torch.Tensor
-        Left matrix.
-
-    Returns
-    -------
-    x : torch.Tensor
-        Target matrix.
-
-    """
-    # solve x
-    return torch.gesv(b, A)[0]
-
-
 def _steady_dist(P, solver=_numpy_solve):
     r"""Get steady state distribution
 
@@ -85,7 +66,7 @@ def _steady_dist(P, solver=_numpy_solve):
     k = P.size(1)
     A = P - torch.eye(k, dtype=P.dtype, device=P.device)
     A = torch.cat([A, torch.ones(k, 1, dtype=A.dtype, device=A.device)], dim=1).t()
-    b = torch.ones(k + 1, 1, device=A.device)
+    b = torch.ones(k + 1, 1, dtype=A.dtype, device=A.device)
     b[-1] = 1
     pi = solver(A, b).t()
     return pi
@@ -745,6 +726,11 @@ class MMmKModule(torch.nn.Module):
         if self.E is None:
             return bd_stdy_dist(lambds, mus, ind)
         else:
+            for i in range(self.k - 1):
+                self.E.data[i, i + 1] = 0
+                self.E.data[i + 1, i] = 0
+            for i in range(self.k):
+                self.E.data[i, i] = 0
             X = bd_mat(lambds, mus, self.E)
             return stdy_dist(X, ind)
 
@@ -943,6 +929,7 @@ class CondDistLossModule(torch.nn.Module):
 
         # get conditional distribution and their observations
         cond_dist = output / output.sum()
+        cond_dist = torch.clamp(cond_dist, 1e-20, 1)
         cond_obvs = target[0:-1]
 
         # compute loss
@@ -982,9 +969,11 @@ class ResiDistLossModule(torch.nn.Module):
 
         # get conditional distribution and their observations
         cond_dist = torch.cat([output, 1 - output.sum().view(1)])
+        cond_dist = torch.clamp(cond_dist, 1e-20, 1)
         cond_obvs = target
 
         # compute loss
+        global temp
         loss = torch.sum(-cond_obvs * torch.log(cond_dist))
         return loss
 
@@ -1525,6 +1514,9 @@ class Task(WithRandom):
         self.criterion = self.CTRL_CLS[ctype]()
         self.optimizer = self.OPTIM_CLS[otype](self.layers.parameters(), lr=self.lr)
 
+        # scale alpha by matrix size
+        self.alpha = self.alpha * (self.train_data.k ** 2)
+
     def fit_from_rand(self, num_epochs, color='green', root='.', name='task'):
         r"""Fit the model from randomness
 
@@ -1583,7 +1575,8 @@ class Task(WithRandom):
                 else:
                     pass
             except Exception as err:
-                print("force to stop by <{}>".format(err))
+                msg = traceback.format_exc()
+                print("force to stop by <{}>".format(msg))
                 break
 
         # save result
@@ -1893,7 +1886,7 @@ if __name__ == '__main__':
     TEST_NUM = 400
     DATA_SEED = 47
     MODEL_SEED = 47
-    NUM_EPOCHS = 30
+    NUM_EPOCHS = 100
 
     # parse arguments
     task, num, alpha_str, hyper = sys.argv[1:]

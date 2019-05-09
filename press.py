@@ -44,14 +44,14 @@ def mmmmr(num, seed):
     """
     # generate data
     kargs = dict(
-        r=6, m=11, const_mu=25, epsilon=1e-4, ind=[0, 1], focus=-1)
+        r=13, m=25, const_mu=25, epsilon=1e-4, ind=[0, 1], focus=-1)
     data = lib.DataMMmmr(num, seed=seed, **kargs)
     test_data = lib.DataMMmmr(TEST_NUM, seed=seed + 1, **kargs)
     layers = lib.MMmKModule(k=data.k, m=data.m, noise=True)
     return 'mmmmr', (data, test_data), layers
 
 
-def study(root, data, layers, seed=47):
+def study(root, data, layers, cand_a, seed=47):
     r"""Hyper Parameter Study
 
     Args
@@ -62,6 +62,8 @@ def study(root, data, layers, seed=47):
         Dataset.
     layers : torch.nn.Module
         Neural network layers.
+    cand_a : str
+        Alpha string candidate.
     seed : int
         Random seed.
 
@@ -90,7 +92,7 @@ def study(root, data, layers, seed=47):
     comb_cands.append(['single'])
     comb_cands.append(['adam'])
     comb_cands.append(['1e-2'])
-    comb_cands.append(['1000'])
+    comb_cands.append([cand_a])
     hyper_combs = itertools.product(*comb_cands)
     num_epochs  = NUM_EPOCHS
     for combine in hyper_combs:
@@ -131,9 +133,12 @@ if __name__ == '__main__':
     NUM_EPOCHS = 100
 
     # parse arguments
-    task, num = sys.argv[1:]
+    task, num, alpha_str, hyper = sys.argv[1:]
     assert task in ('mm1k', 'mmmmr', 'lbwb', 'cio')
     num = int(num)
+    alpha = float(alpha_str)
+    assert hyper in ('quick', 'hyper')
+    is_hyper = True if hyper == 'hyper' else False
 
     # do targeting hyper study
     if sys.argv[1] == 'mm1k':
@@ -147,4 +152,4 @@ if __name__ == '__main__':
     else:
         raise RuntimeError()
     root = "{}-{}".format('press', root)
-    study(root, data, layers, seed=MODEL_SEED)
+    study(root, data, layers, alpha_str, seed=MODEL_SEED)
