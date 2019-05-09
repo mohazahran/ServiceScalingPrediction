@@ -37,6 +37,7 @@ def traverse(root, title, options):
 
     # traverse on given list
     viz_dict = {}
+    best_criterion, best_param = None, None
     for combine in all_lst:
         name = '_'.join(combine)
         viz_key = '+'.join([combine[itr] for itr in vind])
@@ -45,6 +46,7 @@ def traverse(root, title, options):
         loss_lst_te   = data['loss_lst_te']
         ideal_loss_tr = data['ideal_loss_tr']
         ideal_loss_te = data['ideal_loss_te']
+        param         = data['param']
         criterion = min(loss_lst_te)
         if viz_key in viz_dict:
             if criterion < viz_dict[viz_key][1]:
@@ -53,6 +55,11 @@ def traverse(root, title, options):
                 pass
         else:
             viz_dict[viz_key] = (name, criterion, data)
+        if best_criterion is None or criterion < best_criterion:
+            best_criterion = criterion
+            best_param = param
+        else:
+            pass
 
     # set colors
     cmap = plt.get_cmap('gist_rainbow')
@@ -126,11 +133,30 @@ def traverse(root, title, options):
     name = "{}_{}.png".format(root, ''.join([options[itr][-1] for itr in vind]))
     fig.savefig(name)
 
+    # show parameter result
+    if 'mmmmr' in root:
+        ideal_mu = 25
+        learn_mu = best_param['mu'].data.item()
+        print("[Mu]       Learn: {:.3f}; Ideal: {:.3f}".format(learn_mu, ideal_mu))
+    elif 'lbwb' in root:
+        ideal_lambd_B = 15
+        learn_lambd_B = best_param['lambd_B'].data.item()
+        ideal_mu = 25
+        learn_mu = best_param['mu'].data.item()
+        print("[Lambda_B] Learn: {:.3f}; Ideal: {:.3f}".format(learn_lambd_B, ideal_lambd_B))
+        print("[Mu]       Learn: {:.3f}; Ideal: {:.3f}".format(learn_mu, ideal_mu))
+    elif 'cio' in root:
+        ideal_mu = 25
+        learn_mu = best_param['mu'].data.item()
+        print("[Mu]       Learn: {:.3f}; Ideal: {:.3f}".format(learn_mu, ideal_mu))
+    else:
+        raise NotImplementedError()
+
 
 if __name__ == '__main__':
     r"""Main Entrance"""
     # constant options
-    OPTIONS = {
+    QUICK_OPTIONS = {
         'num': (
             'Hyper Parameter Study on Number of Training Samples',
             [
@@ -156,7 +182,7 @@ if __name__ == '__main__':
             ],
         ),
         'rr': (
-            'Hyper Parameter Study on Number of Regularization',
+            'Hyper Parameter Study on Numerical Method',
             [
                 (['400'], False, 'num'),
                 (['sym', 'raw', 'pow'], True, 'rr'),
@@ -168,7 +194,7 @@ if __name__ == '__main__':
             ],
         ),
         'crit': (
-            'Hyper Parameter Study on Number of Regularization',
+            'Hyper Parameter Study on Training Loss',
             [
                 (['400'], False, 'num'),
                 (['sym'], False, 'rr'),
@@ -180,9 +206,59 @@ if __name__ == '__main__':
             ],
         ),
     }
+    HYPER_OPTIONS = {
+        'num': (
+            'Hyper Parameter Study on Number of Training Samples',
+            [
+                (['400', '200', '100', '50', '25'], True, 'num'),
+                (['sym', 'raw', 'pow'], False, 'rr'),
+                (['resi', 'cond', 'mse'], False, 'crit'),
+                (['single', 'full'], False, 'bat'),
+                (['adam', 'rms', 'mse'], False, 'optim'),
+                (['1e-1', '1e-2', '1e-3'], False, 'lr'),
+                (['0', '1', '1000'], False, 'alpha'),
+            ],
+        ),
+        'alpha': (
+            'Hyper Parameter Study on Number of Regularization',
+            [
+                (['400', '200', '100', '50', '25'], False, 'num'),
+                (['sym', 'raw', 'pow'], False, 'rr'),
+                (['resi', 'cond', 'mse'], False, 'crit'),
+                (['single', 'full'], False, 'bat'),
+                (['adam', 'rms', 'mse'], False, 'optim'),
+                (['1e-1', '1e-2', '1e-3'], False, 'lr'),
+                (['0', '1', '1000'], True, 'alpha'),
+            ],
+        ),
+        'rr': (
+            'Hyper Parameter Study on Numerical Method',
+            [
+                (['400', '200', '100', '50', '25'], False, 'num'),
+                (['sym', 'raw', 'pow'], True, 'rr'),
+                (['resi', 'cond', 'mse'], False, 'crit'),
+                (['single', 'full'], False, 'bat'),
+                (['adam', 'rms', 'mse'], False, 'optim'),
+                (['1e-1', '1e-2', '1e-3'], False, 'lr'),
+                (['0', '1', '1000'], False, 'alpha'),
+            ],
+        ),
+        'crit': (
+            'Hyper Parameter Study on Training Loss',
+            [
+                (['400', '200', '100', '50', '25'], False, 'num'),
+                (['sym', 'raw', 'pow'], False, 'rr'),
+                (['resi', 'cond', 'mse'], True, 'crit'),
+                (['single', 'full'], False, 'bat'),
+                (['adam', 'rms', 'mse'], False, 'optim'),
+                (['1e-1', '1e-2', '1e-3'], False, 'lr'),
+                (['0', '1', '1000'], False, 'alpha'),
+            ],
+        ),
+    }
 
 
     # traverse and visualize on given options
     root, viz = sys.argv[1:]
-    options = OPTIONS[viz]
+    options = HYPER_OPTIONS[viz]
     traverse(root, *options)

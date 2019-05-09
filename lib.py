@@ -159,6 +159,46 @@ def _russian_roulette_raw(P, Pinf, M, dist, *args, **kargs):
     return part1 + part2
 
 
+def _russian_roulette_hav(P, Pinf, M, dist, *args, **kargs):
+    r"""Russian Roulette infinite product summation with half infinite split trick
+
+    Args
+    ----
+    P : torch.Tensor
+        Stochastic matrix to apply infinite product summation.
+    Pinf : torch.Tensor
+        Infinite power of input stochastic matrix.
+    M : torch.Tensor
+        Midterm matrix in each term of infinite product summation.
+    dist : scipy.stats.rv_discrete
+        Random variable distribution to sample from for Russian Roulette.
+
+    Returns
+    -------
+    Y : torch.Tensor
+        Infinite product summation result.
+
+    """
+    print('Here')
+    exit()
+
+    # get shape setting
+    k = P.size(1)
+
+    # sample x for Russian Roulette
+    x = dist.rvs(*args, **kargs)
+
+    # compute expectation with infinity split
+    prod = torch.eye(k, dtype=P.dtype, device=P.device)
+    E = torch.zeros(k, k, dtype=P.dtype, device=P.device)
+    for i in range(1, x + 1):
+        cdf_above = stats.geom.sf(i, *args, **kargs)
+        E = E + torch.div(prod, cdf_above)
+        prod = torch.matmul(P, prod)
+    part1 = torch.matmul(torch.matmul(Pinf, M), E)
+    return part1
+
+
 def _zero_tridiag(mx):
     r"""Zero-out tridiagonal lines for a matrix
 
@@ -1219,8 +1259,6 @@ class DataLBWB(WithRandom):
                 self.mu_01[idx1, idx2] = 1
             else:
                 raise RuntimeError()
-        # // print(self.lambda_01.data.numpy())
-        # // exit()
 
         # create death matrix and bucket-birth matrix
         self._lambda_B_mx = self._lambda_B * self.lambda_B_01
