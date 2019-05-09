@@ -38,6 +38,8 @@ def traverse(root, title, options):
     # traverse on given list
     viz_dict = {}
     best_criterion, best_param = None, None
+    vmax_tr, vmax_te = None, None
+    vmin_tr, vmin_te = None, None
     for combine in all_lst:
         name = '_'.join(combine)
         viz_key = '+'.join([combine[itr] for itr in vind])
@@ -60,6 +62,10 @@ def traverse(root, title, options):
             best_param = param
         else:
             pass
+        vmax_tr = loss_lst_tr[0] if vmax_tr is None else max(loss_lst_tr[0], vmax_tr)
+        vmax_te = loss_lst_te[0] if vmax_te is None else max(loss_lst_te[0], vmax_te)
+        vmin_tr = ideal_loss_tr if vmin_tr is None else min(ideal_loss_tr, vmin_tr)
+        vmin_te = ideal_loss_te if vmin_te is None else min(ideal_loss_te, vmin_te)
 
     # set colors
     cmap = plt.get_cmap('gist_rainbow')
@@ -73,37 +79,35 @@ def traverse(root, title, options):
     ncol = int(np.ceil(float(num) / 18))
     if viz_train:
         fig, (ax_tr, ax_te) = plt.subplots(1, 2, figsize=(ncol * 3 * (1 + 3 * 2), 6))
+        loss_name = {'resi': 'Residual', 'cond': 'Conditional', 'mse': 'MSE'}[options[2][0][0]]
     else:
         fig, ax_te = plt.subplots(1, 1, figsize=(ncol * 3 * (1 + 3 * 1), 6))
+        loss_name = None
     fig.suptitle(title)
     if viz_train:
         ax_tr.set_xlabel('#Epochs')
+        ax_tr.set_ylabel("{} Dist Loss At Observed State (Sample Averaged)".format(loss_name))
         ax_tr.set_facecolor('silver')
         ax_tr.set_axisbelow(True)
         ax_tr.grid(axis='y', linestyle='-', linewidth='0.5', color='white')
     else:
         pass
     ax_te.set_xlabel('#Epochs')
+    ax_te.set_ylabel('MSE Dist Loss At Target State (Sample Averaged)')
     ax_te.set_facecolor('silver')
     ax_te.set_axisbelow(True)
     ax_te.grid(axis='y', linestyle='-', linewidth='0.5', color='white')
 
     # traverse visualization keywords
-    vmax_tr, vmax_te = None, None
-    vmin_tr, vmin_te = None, None
     for i, (key, (name, _, data)) in enumerate(viz_dict.items()):
         loss_lst_tr   = data['loss_lst_tr']
         loss_lst_te   = data['loss_lst_te']
         ideal_loss_tr = data['ideal_loss_tr']
         ideal_loss_te = data['ideal_loss_te']
-        vmax_tr = loss_lst_tr[0] if vmax_tr is None else max(loss_lst_tr[0], vmax_tr)
-        vmax_te = loss_lst_te[0] if vmax_te is None else max(loss_lst_te[0], vmax_te)
-        vmin_tr = ideal_loss_tr if vmin_tr is None else min(ideal_loss_tr, vmin_tr)
-        vmin_te = ideal_loss_te if vmin_te is None else min(ideal_loss_te, vmin_te)
         xdata_tr = list(range(len(loss_lst_tr)))
         xdata_te = list(range(len(loss_lst_te)))
         ydata_tr = loss_lst_tr
-        ydata_te = loss_lst_te
+        ydata_te = loss_lst_te # // [vmax_te] + loss_lst_te[1:]
         if viz_train:
             line = ax_tr.plot(xdata_tr, ydata_tr, color=colors[i], alpha=0.5, label=name)[0]
         else:

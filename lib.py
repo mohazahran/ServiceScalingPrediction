@@ -66,7 +66,7 @@ def _steady_dist(P, solver=_numpy_solve):
     k = P.size(1)
     A = P - torch.eye(k, dtype=P.dtype, device=P.device)
     A = torch.cat([A, torch.ones(k, 1, dtype=A.dtype, device=A.device)], dim=1).t()
-    b = torch.ones(k + 1, 1, dtype=A.dtype, device=A.device)
+    b = torch.zeros(k + 1, 1, dtype=A.dtype, device=A.device)
     b[-1] = 1
     pi = solver(A, b).t()
     return pi
