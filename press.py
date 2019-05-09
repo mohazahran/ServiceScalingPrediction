@@ -90,7 +90,7 @@ def study(root, data, layers, seed=47):
     comb_cands.append(['single'])
     comb_cands.append(['adam'])
     comb_cands.append(['1e-2'])
-    comb_cands.append(['1000'])
+    comb_cands.append(['0', '1', '30', '1000'])
     hyper_combs = itertools.product(*comb_cands)
     num_epochs  = NUM_EPOCHS
     for combine in hyper_combs:

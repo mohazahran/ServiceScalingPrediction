@@ -160,7 +160,7 @@ if __name__ == '__main__':
         'num': (
             'Hyper Parameter Study on Number of Training Samples',
             [
-                (['400', '200', '100', '50', '25'], True, 'num'),
+                (['200', '100', '50', '25', '1'], True, 'num'),
                 (['sym'], False, 'rr'),
                 (['resi'], False, 'crit'),
                 (['single'], False, 'bat'),
@@ -172,7 +172,7 @@ if __name__ == '__main__':
         'alpha': (
             'Hyper Parameter Study on Number of Regularization',
             [
-                (['400'], False, 'num'),
+                (['200'], False, 'num'),
                 (['sym'], False, 'rr'),
                 (['resi'], False, 'crit'),
                 (['single'], False, 'bat'),
@@ -184,8 +184,8 @@ if __name__ == '__main__':
         'rr': (
             'Hyper Parameter Study on Numerical Method',
             [
-                (['400'], False, 'num'),
-                (['sym', 'raw', 'pow'], True, 'rr'),
+                (['200'], False, 'num'),
+                (['sym', 'raw', 'pow', 'hav'], True, 'rr'),
                 (['resi'], False, 'crit'),
                 (['single'], False, 'bat'),
                 (['adam'], False, 'optim'),
@@ -196,63 +196,13 @@ if __name__ == '__main__':
         'crit': (
             'Hyper Parameter Study on Training Loss',
             [
-                (['400'], False, 'num'),
+                (['200'], False, 'num'),
                 (['sym'], False, 'rr'),
                 (['resi', 'cond', 'mse'], True, 'crit'),
                 (['single'], False, 'bat'),
                 (['adam'], False, 'optim'),
                 (['1e-2'], False, 'lr'),
                 (['1000'], False, 'alpha'),
-            ],
-        ),
-    }
-    HYPER_OPTIONS = {
-        'num': (
-            'Hyper Parameter Study on Number of Training Samples',
-            [
-                (['400', '200', '100', '50', '25'], True, 'num'),
-                (['sym', 'raw', 'pow'], False, 'rr'),
-                (['resi', 'cond', 'mse'], False, 'crit'),
-                (['single', 'full'], False, 'bat'),
-                (['adam', 'rms', 'mse'], False, 'optim'),
-                (['1e-1', '1e-2', '1e-3'], False, 'lr'),
-                (['0', '1', '1000'], False, 'alpha'),
-            ],
-        ),
-        'alpha': (
-            'Hyper Parameter Study on Number of Regularization',
-            [
-                (['400', '200', '100', '50', '25'], False, 'num'),
-                (['sym', 'raw', 'pow'], False, 'rr'),
-                (['resi', 'cond', 'mse'], False, 'crit'),
-                (['single', 'full'], False, 'bat'),
-                (['adam', 'rms', 'mse'], False, 'optim'),
-                (['1e-1', '1e-2', '1e-3'], False, 'lr'),
-                (['0', '1', '1000'], True, 'alpha'),
-            ],
-        ),
-        'rr': (
-            'Hyper Parameter Study on Numerical Method',
-            [
-                (['400', '200', '100', '50', '25'], False, 'num'),
-                (['sym', 'raw', 'pow'], True, 'rr'),
-                (['resi', 'cond', 'mse'], False, 'crit'),
-                (['single', 'full'], False, 'bat'),
-                (['adam', 'rms', 'mse'], False, 'optim'),
-                (['1e-1', '1e-2', '1e-3'], False, 'lr'),
-                (['0', '1', '1000'], False, 'alpha'),
-            ],
-        ),
-        'crit': (
-            'Hyper Parameter Study on Training Loss',
-            [
-                (['400', '200', '100', '50', '25'], False, 'num'),
-                (['sym', 'raw', 'pow'], False, 'rr'),
-                (['resi', 'cond', 'mse'], True, 'crit'),
-                (['single', 'full'], False, 'bat'),
-                (['adam', 'rms', 'mse'], False, 'optim'),
-                (['1e-1', '1e-2', '1e-3'], False, 'lr'),
-                (['0', '1', '1000'], False, 'alpha'),
             ],
         ),
     }
@@ -260,5 +210,5 @@ if __name__ == '__main__':
 
     # traverse and visualize on given options
     root, viz = sys.argv[1:]
-    options = HYPER_OPTIONS[viz]
+    options = QUICK_OPTIONS[viz]
     traverse(root, *options)
