@@ -44,7 +44,7 @@ def mmmmr(num, seed):
     """
     # generate data
     kargs = dict(
-        r=13, m=25, const_mu=25, epsilon=1e-4, ind=[0, 1], focus=-1)
+        r=M // 2, m=M, const_mu=25, epsilon=1e-4, ind=[0, 1], focus=-1)
     data = lib.DataMMmmr(num, seed=seed, **kargs)
     test_data = lib.DataMMmmr(TEST_NUM, seed=seed + 1, **kargs)
     layers = lib.MMmKModule(k=data.k, m=data.m, noise=True)
@@ -126,6 +126,7 @@ if __name__ == '__main__':
 
     # set fit epochs
     TEST_NUM = 400
+    M = 25
     DATA_SEED = 47
     MODEL_SEED = 47
     NUM_EPOCHS = 100
@@ -149,5 +150,5 @@ if __name__ == '__main__':
         root, data, layers = cio(num, seed=DATA_SEED)
     else:
         raise RuntimeError()
-    root = "{}-{}".format('press', root)
+    root = "{}-{}-{}".format('press', M, root)
     study(root, data, layers, seed=MODEL_SEED)
