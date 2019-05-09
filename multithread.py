@@ -39,10 +39,14 @@ class LibThread(threading.Thread):
 if __name__ == '__main__':
     r"""Main Entrance"""
     # parse arguments
-    holder, task, hyper = sys.argv[1:]
+    holder, task, hyper = sys.argv[1:4]
     assert holder in ('lib.py', 'press.py')
     assert task in ('mmmmr', 'lbwb', 'cio')
     assert hyper in ('quick', 'hyper')
+    if holder == 'press.py':
+        M = int(sys.argv[4])
+    else:
+        pass
 
     # ensure logging folder
     if os.path.isdir('log'):
@@ -51,7 +55,10 @@ if __name__ == '__main__':
         os.makedirs('log')
 
     # ensure task result folder
-    root = "{}-{}".format(hyper, task)
+    if holder == 'press.py':
+        root = "press-{}-{}".format(M, task)
+    else:
+        root = "{}-{}".format(hyper, task)
     if os.path.isdir(root):
         pass
     else:
@@ -61,11 +68,12 @@ if __name__ == '__main__':
     thread_lst = []
     num_lst = ['400', '200', '100', '50', '25', '1']
     for num in num_lst:
-        args = ('python', holder, task, num, hyper)
         if holder == 'press.py':
-            name = '_'.join([str(itr) for itr in args[2:-1]])
-            name = "{}_press".format(name)
+            args = ('python', holder, task, num, hyper, M)
+            name = '_'.join([str(itr) for itr in args[2:-2]])
+            name = "{}_press_{}".format(name, M)
         else:
+            args = ('python', holder, task, num, hyper)
             name = '_'.join([str(itr) for itr in args[2:]])
         cmd = ' '.join(["{:<8s}".format(str(itr)) for itr in args])
         cmd = "{} 2>&1 > {}".format(cmd, os.path.join('log', "{}.log".format(name)))

@@ -126,18 +126,18 @@ if __name__ == '__main__':
 
     # set fit epochs
     TEST_NUM = 400
-    M = 25
     DATA_SEED = 47
     MODEL_SEED = 47
     NUM_EPOCHS = 100
 
     # parse arguments
-    task, num, hyper = sys.argv[1:]
+    task, num, hyper, M = sys.argv[1:]
     assert task in ('mm1k', 'mmmmr', 'lbwb', 'cio')
     num = int(num)
     assert hyper in ('quick', 'hyper')
     is_hyper = True if hyper == 'hyper' else False
     assert not is_hyper
+    M = int(M)
 
     # do targeting hyper study
     if sys.argv[1] == 'mm1k':
