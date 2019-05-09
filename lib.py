@@ -1,6 +1,7 @@
 import numpy as np
 import scipy.stats as stats
 import torch
+import time
 import re
 import copy
 import os
@@ -179,9 +180,6 @@ def _russian_roulette_hav(P, Pinf, M, dist, *args, **kargs):
         Infinite product summation result.
 
     """
-    print('Here')
-    exit()
-
     # get shape setting
     k = P.size(1)
 
@@ -1551,6 +1549,7 @@ class Task(WithRandom):
         loss_tr = self.eval_train()
         loss_te = self.eval_test()
         self.loss_lst_tr, self.loss_lst_te = [loss_tr], [loss_te]
+        self.time_lst = []
         print(fmt.format(0, loss_tr, loss_te))
 
         # fit parameters
@@ -1561,7 +1560,9 @@ class Task(WithRandom):
                 dind = np.random.permutation(len(self.train_data))
 
                 # train
+                timer = time.time()
                 getattr(self, "_{}_ffbp".format(self.ptype))(dind)
+                time_cost = time.time() - timer
 
                 # evaluate
                 loss_tr = self.eval_train()
@@ -1573,6 +1574,7 @@ class Task(WithRandom):
                 else:
                     self.loss_lst_tr.append(loss_tr)
                     self.loss_lst_te.append(loss_te)
+                    self.time_lst.append(time_cost)
 
                 # update best parameters
                 if self.best_loss is None or loss_te < self.best_loss:
@@ -1891,7 +1893,7 @@ if __name__ == '__main__':
     TEST_NUM = 400
     DATA_SEED = 47
     MODEL_SEED = 47
-    NUM_EPOCHS = 100
+    NUM_EPOCHS = 30
 
     # parse arguments
     task, num, alpha_str, hyper = sys.argv[1:]

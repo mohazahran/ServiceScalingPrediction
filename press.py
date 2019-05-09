@@ -44,7 +44,7 @@ def mmmmr(num, seed):
     """
     # generate data
     kargs = dict(
-        r=13, m=25, const_mu=25, epsilon=1e-4, ind=[0, 1], focus=-1)
+        r=6, m=11, const_mu=25, epsilon=1e-4, ind=[0, 1], focus=-1)
     data = lib.DataMMmmr(num, seed=seed, **kargs)
     test_data = lib.DataMMmmr(TEST_NUM, seed=seed + 1, **kargs)
     layers = lib.MMmKModule(k=data.k, m=data.m, noise=True)
