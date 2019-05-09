@@ -1839,7 +1839,7 @@ def study(root, data, layers, seed=47, hyper_search=False):
 
     # traverse loss and batch settings
     comb_cands = []
-    comb_cands.append(['sym', 'raw', 'pow', 'hav'])
+    comb_cands.append(['hav', 'sym', 'raw', 'pow', ])
     comb_cands.append(['resi', 'cond', 'mse'])
     if hyper_search:
         comb_cands.append(['single', 'full'])
@@ -1849,7 +1849,7 @@ def study(root, data, layers, seed=47, hyper_search=False):
         comb_cands.append(['single'])
         comb_cands.append(['adam'])
         comb_cands.append(['1e-2'])
-    comb_cands.append(['0', '1', '1000'])
+    comb_cands.append(['1000', '30', '1', '0'])
     hyper_combs = itertools.product(*comb_cands)
     num_epochs  = NUM_EPOCHS
     for combine in hyper_combs:
