@@ -1806,7 +1806,7 @@ def cio(num, seed):
     return 'cio', (data, test_data), layers
 
 
-def study(root, data, layers, cand_a, seed=47, hyper_search=False):
+def study(root, data, layers, seed=47, hyper_search=False):
     r"""Hyper Parameter Study
 
     Args
@@ -1817,8 +1817,6 @@ def study(root, data, layers, cand_a, seed=47, hyper_search=False):
         Dataset.
     layers : torch.nn.Module
         Neural network layers.
-    cand_a : str
-        Alpha string candidate.
     seed : int
         Random seed.
     hyper_search : bool
@@ -1841,7 +1839,7 @@ def study(root, data, layers, cand_a, seed=47, hyper_search=False):
 
     # traverse loss and batch settings
     comb_cands = []
-    comb_cands.append(['sym', 'raw', 'pow'])
+    comb_cands.append(['sym', 'raw', 'pow', 'hav'])
     comb_cands.append(['resi', 'cond', 'mse'])
     if hyper_search:
         comb_cands.append(['single', 'full'])
@@ -1851,7 +1849,7 @@ def study(root, data, layers, cand_a, seed=47, hyper_search=False):
         comb_cands.append(['single'])
         comb_cands.append(['adam'])
         comb_cands.append(['1e-2'])
-    comb_cands.append([cand_a])
+    comb_cands.append(['0', '1', '1000'])
     hyper_combs = itertools.product(*comb_cands)
     num_epochs  = NUM_EPOCHS
     for combine in hyper_combs:
@@ -1868,6 +1866,9 @@ def study(root, data, layers, cand_a, seed=47, hyper_search=False):
         elif dtype == 'pow':
             GenericSteadyDist.RR = None
             stdy_dist = stdy_dist_pow
+        elif dtype == 'hav':
+            GenericSteadyDist.RR = _russian_roulette_hav
+            stdy_dist = stdy_dist_sol
         else:
             raise RuntimeError()
         layers.load_state_dict(init_params)
@@ -1889,10 +1890,9 @@ if __name__ == '__main__':
     NUM_EPOCHS = 100
 
     # parse arguments
-    task, num, alpha_str, hyper = sys.argv[1:]
+    task, num, hyper = sys.argv[1:]
     assert task in ('mm1k', 'mmmmr', 'lbwb', 'cio')
     num = int(num)
-    alpha = float(alpha_str)
     assert hyper in ('quick', 'hyper')
     is_hyper = True if hyper == 'hyper' else False
 
@@ -1908,4 +1908,4 @@ if __name__ == '__main__':
     else:
         raise RuntimeError()
     root = "{}-{}".format(hyper, root)
-    study(root, data, layers, alpha_str, seed=MODEL_SEED, hyper_search=is_hyper)
+    study(root, data, layers, seed=MODEL_SEED, hyper_search=is_hyper)
