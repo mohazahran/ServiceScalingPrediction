@@ -182,7 +182,7 @@ if __name__ == '__main__':
                 (['single'], False, 'bat'),
                 (['adam'], False, 'optim'),
                 (['1e-2'], False, 'lr'),
-                (['0', '1', '1000'], True, 'alpha'),
+                (['0', '1', '30', '1000'], True, 'alpha'),
             ],
         ),
         'rr': (
