@@ -5,3 +5,4 @@ for root in quick-mmmmr quick-lbwb quick-cio; do
         python viz.py ${root} ${viz}
     done
 done
+python viz.py press-25-mmmmr rr

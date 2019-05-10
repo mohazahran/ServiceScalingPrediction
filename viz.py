@@ -71,6 +71,7 @@ def traverse(root, title, options):
     cmap = plt.get_cmap('gist_rainbow')
     num = len(viz_dict)
     colors = [cmap(i / num) for i in range(num)]
+    colors = ['red', 'orange', 'green', 'blue', 'purple'][0:num]
 
     # check availability for training loss
     viz_train = (len(options[2][0]) == 1)
@@ -87,16 +88,16 @@ def traverse(root, title, options):
     if viz_train:
         ax_tr.set_xlabel('#Epochs')
         ax_tr.set_ylabel("{} Dist Loss At Observed State (Sample Averaged)".format(loss_name))
-        ax_tr.set_facecolor('silver')
+        # // ax_tr.set_facecolor('silver')
         ax_tr.set_axisbelow(True)
-        ax_tr.grid(axis='y', linestyle='-', linewidth='0.5', color='white')
+        ax_tr.grid(axis='y', linestyle='-', linewidth='0.5', color='black')
     else:
         pass
     ax_te.set_xlabel('#Epochs')
     ax_te.set_ylabel('MSE Dist Loss At Target State (Sample Averaged)')
-    ax_te.set_facecolor('silver')
+    # // ax_te.set_facecolor('silver')
     ax_te.set_axisbelow(True)
-    ax_te.grid(axis='y', linestyle='-', linewidth='0.5', color='white')
+    ax_te.grid(axis='y', linestyle='-', linewidth='0.5', color='black')
 
     # traverse visualization keywords
     for i, (key, (name, _, data)) in enumerate(viz_dict.items()):
@@ -108,22 +109,25 @@ def traverse(root, title, options):
         xdata_te = list(range(len(loss_lst_te)))
         ydata_tr = loss_lst_tr
         ydata_te = loss_lst_te # // [vmax_te] + loss_lst_te[1:]
+        label = key.upper()
         if viz_train:
-            line = ax_tr.plot(xdata_tr, ydata_tr, color=colors[i], alpha=0.5, label=name)[0]
+            line = ax_tr.plot(xdata_tr, ydata_tr, color=colors[i], alpha=0.5, label=label)[0]
         else:
             pass
-        line_te = ax_te.plot(xdata_te, ydata_te, color=colors[i], alpha=0.5, label=name)[0]
+        line_te = ax_te.plot(xdata_te, ydata_te, color=colors[i], alpha=0.5, label=label)[0]
 
     # reset range
     vrange_tr = vmax_tr - vmin_tr
     vrange_te = vmax_te - vmin_te
     if viz_train:
-        ax_tr.set_ylim(vmin_tr - vrange_tr * 0.05, vmax_tr + vrange_tr * 0.05)
-        ax_tr.axhline(vmin_tr, color='black', lw=0.5, ls='--')
+        # ax_tr.set_ylim(vmin_tr - vrange_tr * 0.05, vmax_tr + vrange_tr * 0.05)
+        ax_tr.set_ylim(None, vmax_tr + vrange_tr * 0.05)
+        # // ax_tr.axhline(vmin_tr, color='black', lw=0.5, ls='--')
     else:
         pass
-    ax_te.set_ylim(vmin_te - vrange_te * 0.05, vmax_te + vrange_te * 0.05)
-    ax_te.axhline(vmin_te, color='black', lw=0.5, ls='--')
+    # ax_te.set_ylim(vmin_te - vrange_te * 0.05, vmax_te + vrange_te * 0.05)
+    ax_te.set_ylim(None, vmax_te + vrange_te * 0.05)
+    # // ax_te.axhline(vmin_te, color='white', lw=0.5, ls='--')
 
     # legend
     if viz_train:
@@ -153,6 +157,10 @@ def traverse(root, title, options):
         ideal_mu = 25
         learn_mu = best_param['mu'].data.item()
         print("[Mu]       Learn: {:.3f}; Ideal: {:.3f}".format(learn_mu, ideal_mu))
+    elif 'mm1kg' in root:
+        ideal_mu = 25
+        learn_mu = best_param['mu'].data.item()
+        print("[Mu]       Learn: {:.3f}; Ideal: {:.3f}".format(learn_mu, ideal_mu))
     else:
         raise NotImplementedError()
 
@@ -165,7 +173,7 @@ if __name__ == '__main__':
             'Hyper Parameter Study on Number of Training Samples',
             [
                 (['200', '100', '50', '25', '1'], True, 'num'),
-                (['sym'], False, 'rr'),
+                (['hav'], False, 'rr'),
                 (['resi'], False, 'crit'),
                 (['single'], False, 'bat'),
                 (['adam'], False, 'optim'),
@@ -176,8 +184,8 @@ if __name__ == '__main__':
         'alpha': (
             'Hyper Parameter Study on Number of Regularization',
             [
-                (['200'], False, 'num'),
-                (['sym'], False, 'rr'),
+                (['100'], False, 'num'),
+                (['hav'], False, 'rr'),
                 (['resi'], False, 'crit'),
                 (['single'], False, 'bat'),
                 (['adam'], False, 'optim'),
@@ -189,7 +197,7 @@ if __name__ == '__main__':
             'Hyper Parameter Study on Numerical Method',
             [
                 (['200'], False, 'num'),
-                (['sym', 'raw', 'pow', 'hav'], True, 'rr'),
+                (['pow', 'hav'], True, 'rr'), # 'sym', 'raw', 
                 (['resi'], False, 'crit'),
                 (['single'], False, 'bat'),
                 (['adam'], False, 'optim'),
@@ -200,8 +208,8 @@ if __name__ == '__main__':
         'crit': (
             'Hyper Parameter Study on Training Loss',
             [
-                (['200'], False, 'num'),
-                (['sym'], False, 'rr'),
+                (['100'], False, 'num'),
+                (['hav'], False, 'rr'),
                 (['resi', 'cond', 'mse'], True, 'crit'),
                 (['single'], False, 'bat'),
                 (['adam'], False, 'optim'),
