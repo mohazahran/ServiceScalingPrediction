@@ -355,7 +355,7 @@ class Task(object):
             'loss_lst_te'  : self.loss_lst_te,
             'ideal_loss_tr': self.ideal_loss_tr,
             'ideal_loss_te': self.ideal_loss_te,
-            'param'        : self.layers.state_dict(),
+            'param'        : self.best_params,
             'ideal_param'  : self.test_data.param_dict(),
         }
         torch.save(save_dict, os.path.join(root, "{}.pt".format(name)))

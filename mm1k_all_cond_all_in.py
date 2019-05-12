@@ -3,7 +3,6 @@ import os
 import data
 import module
 
-
 # number of training samples
 num_lst = [
     1,
@@ -23,7 +22,6 @@ magic_lst = [
     {'method': 'rrx', 'trick': 'rr'   },
 ]
 
-
 # constant settings
 case = 'mm1k'
 ctype = 'cond'
@@ -32,6 +30,7 @@ alpha_str = sys.argv[1]
 
 # create saving folder
 root = "{}_{}_{}_{}_{}".format(case, 'all', ctype, 'all', alpha_str)
+root = '.'
 if os.path.isdir(root):
     pass
 else:
