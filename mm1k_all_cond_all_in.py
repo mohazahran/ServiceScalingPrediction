@@ -28,7 +28,7 @@ magic_lst = [
 case = 'mm1k'
 ctype = 'cond'
 num_epochs = 300
-alpha_str = float(sys.argv[1])
+alpha_str = sys.argv[1]
 
 # create saving folder
 root = "{}_{}_{}_{}_{}".format(case, 'all', ctype, 'all', alpha_str)
@@ -41,7 +41,7 @@ else:
 for num in num_lst:
     # generate data
     seed, train_data, test_data = getattr(data, case)(num)
-    
+
     # traverse numerical method
     for magic in magic_lst:
         alpha = float(alpha_str)
