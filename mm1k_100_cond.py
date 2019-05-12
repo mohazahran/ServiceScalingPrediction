@@ -16,9 +16,9 @@ alpha_lst = [
 ]
 
 # generate data
-task = 'mm1k'
+case = 'mm1k'
 num = 100
-seed, train_data, test_data = getattr(data, task)(num)
+seed, train_data, test_data = getattr(data, case)(num)
 
 # criterion
 ctype = 'cond'
@@ -32,6 +32,6 @@ for magic in magic_lst:
             model = module.QueueModule(train_data, **magic)
         else:
             model = module.MMmKModule(train_data, **magic)
-        name = "{}_{}_{}_{}_{}".format(task, num, ctype, magic['trick'], alpha_str)
+        name = "{}_{}_{}_{}_{}".format(case, num, ctype, magic['trick'], alpha_str)
         task = module.Task(train_data, test_data, model, ctype=ctype, alpha=alpha, seed=seed)
         task.fit_from_rand(num_epochs, name=name)
