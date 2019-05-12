@@ -65,19 +65,31 @@ class QueueData(object):
         lambd_cands = sorted(lambd_cands)
 
         # sample observations for all lambda candidates
+        sg_min, sg_max = 1, 0
         for const_lambd in lambd_cands:
             # generate raw matrix
             X = self.mx(self.noise, const_lambd, *self.mxargs)
 
+            # remember spectral gap
+            sg = self.spectral_gap(X)
+            sg_min = min(sg_min, sg)
+            sg_max = max(sg_max, sg)
+
             # get steady state
-            pi = F.stdy_dist_rrx(X, None, trick='hav')
-            target = F.stdy_dist_rrx(X, self.ind, trick='hav')
+            pi = F.stdy_dist_rrx(X, None, trick='rrinf')
+            target = F.stdy_dist_rrx(X, self.ind, trick='rrinf')
 
             # sample observations from steady state on ideal birth-death process
             probas = target.data.numpy()
             obvs = [stats.poisson.rvs(proba * const_lambd) for proba in probas]
             obvs.append(stats.poisson.rvs((1 - probas.sum()) * const_lambd))
             self.samples.append((torch.Tensor([const_lambd]), pi, torch.Tensor(obvs)))
+
+        # output some data information
+        fmt = "{:3d}, {:.3f} ({:.3f}), {:.3f} ({:.3f})"
+        sg_min_pow = sg_min ** (2 ** 7)
+        sg_max_pow = sg_max ** (2 ** 7)
+        print(fmt.format(len(self), sg_min, sg_min_pow, sg_max, sg_max_pow))
 
     def __len__(self):
         r"""Get length of the class
@@ -107,6 +119,36 @@ class QueueData(object):
         noise = torch.abs(noise)
         noise = noise / torch.norm(noise) * self.epsilon
         return noise
+
+    def spectral_gap(self, mx):
+        r"""Get spectral gap of transition matrix for given matrix
+
+        Args
+        ----
+        mx : torch.Tensor
+            Given matrix.
+
+        Returns
+        -------
+        sg : float
+            Spectral gap.
+
+        """
+        # get diagonal line for uniform normalization
+        diags = torch.sum(mx, dim=1)
+        diags_mx = torch.diagflat(diags)
+
+        # get gamma for uniform normalization
+        gamma, _id = torch.max(diags), torch.argmax(diags)
+        gamma, _id = gamma.item() + 0.001, _id.item()
+
+        # get P
+        Q = mx - diags_mx
+        P = torch.eye(self.k, dtype=Q.dtype, device=Q.device) + Q / gamma
+        P = P.data.numpy()
+
+        # get second largest eigenvalue
+        return np.real(np.sort(np.linalg.eigvals(P)))[-2]
 
 
 class DataMMmK(QueueData):
@@ -197,3 +239,80 @@ class DataMMmK(QueueData):
         # construct matrix
         X = noise + lambd * self.bmx + mu * self.dmx
         return X
+
+    def update_input_prior(self, mx, lambd):
+        r"""Construct data matrix
+
+        Args
+        ----
+        mx : torch.Tensor
+            Matrix tensor to update.
+        lambd : float
+            Input rate lambda.
+
+        Returns
+        -------
+        mx : torch.Tensor
+            Data matrix updated by input.
+
+        """
+        # diagonal line should always be zero
+        for i in range(min(mx.size())):
+            mx.data[i, i] = 0
+
+        # input (upper diagonal) line should be given value
+        for i, j in torch.nonzero(self.bmx):
+            mx.data[i, j] = lambd
+        return mx
+
+    def param_dict(self):
+        r"""Return truth parameter corresponding to the model
+
+        Returns
+        -------
+        param_dict : dict
+            Named parameter.
+
+        """
+        # name necessary parameter
+        return {'mu': self.mxargs[0]}
+
+
+r"""
+Function
+========
+- **mm1k** : Generate M/M/1/K test case
+"""
+
+
+def mm1k(num):
+    r"""Generate M/M/1/K test case
+
+    Args
+    ----
+    num : int
+        Number of training samples.
+
+    Returns
+    -------
+    seed : int
+        Random seed to use.
+    train_data : object
+        Training data.
+    test_data : object
+        Test data.
+
+    """
+    # global settings decided by data
+    np.set_printoptions(precision=8, suppress=True)
+
+    # set random seed
+    seed = 47
+
+    # set sharing configuration
+    data_kargs = dict(k=20, m=1, const_mu=25, epsilon=1e-4, ind=[0, 1], focus=-1)
+
+    # generate data
+    train_data = DataMMmK(n=num, lamin=20, lamax=30, seed=seed - 1, **data_kargs)
+    test_data  = DataMMmK(n=400, lamin=1 , lamax=50, seed=seed + 1, **data_kargs)
+    return seed, train_data, test_data

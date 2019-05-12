@@ -6,5 +6,3 @@ __pycache__/
 *.png
 *.pt
 *.log
-
-!new/

@@ -6,11 +6,11 @@ import torch
 r"""
 Utils
 =====
-- **_numpy_solve**          : Solve linear system by numpy
-- **_steady_dist**          : Get steady state distributuion
-- **_russian_roulette_sym** : Russian Roulette infinite product summation with infinite split trick
-- **_russian_roulette_raw** : Russian Roulette infinite product summation without infinite split trick
-- **_russian_roulette_hav** : Russian Roulette infinite product summation with half infinite split trick
+- **_numpy_solve**                : Solve linear system by numpy
+- **_steady_dist**                : Get steady state distributuion
+- **_russian_roulette**           : Infinite product summation with Russian Roulette
+- **_inf_split**                  : Infinite product summation with infinite split
+- **_russian_roulette_inf_split** : infinite product summation with Russian Roulette and infinite split
 """
 
 
@@ -66,8 +66,8 @@ def _steady_dist(P, solver=_numpy_solve):
     return pi
 
 
-def _russian_roulette_sym(P, Pinf, M, dist, *args, **kargs):
-    r"""Russian Roulette infinite product summation with infinite split trick
+def _russian_roulette(P, Pinf, M, dist, *args, **kargs):
+    r"""Infinite product summation without Russian Roulette
 
     Args
     ----
@@ -92,20 +92,24 @@ def _russian_roulette_sym(P, Pinf, M, dist, *args, **kargs):
     # sample x for Russian Roulette
     x = dist.rvs(*args, **kargs)
 
+    # compute all necessary power to save time
+    t = max(x, RR_T)
+    prod_lst = [torch.eye(k, dtype=P.dtype, device=P.device)]
+    for i in range(t - 1):
+        prod_lst.append(torch.matmul(P, prod_lst[-1]))
+
     # compute expectation with infinity split
-    prod = torch.eye(k, dtype=P.dtype, device=P.device)
     E = torch.zeros(k, k, dtype=P.dtype, device=P.device)
-    for i in range(1, x + 1):
+    for i in range(1, t + 1):
         cdf_above = stats.geom.sf(i, *args, **kargs)
-        E = E + torch.div(prod, cdf_above)
-        prod = torch.matmul(P, prod)
-    part1 = torch.matmul(torch.matmul(Pinf, M), E)
-    part2 = torch.matmul(torch.matmul(E, M), Pinf)
-    return part1 + part2
+        part1 = prod_lst[t - i]
+        part2 = prod_lst[i - 1]
+        E = E + torch.div(torch.matmul(torch.matmul(part1, M), part2), cdf_above)
+    return E
 
 
-def _russian_roulette_raw(P, Pinf, M, dist, *args, **kargs):
-    r"""Russian Roulette infinite product summation without infinite split trick
+def _inf_split(P, Pinf, M, dist, *args, **kargs):
+    r"""Infinite product summation with infinite split trick
 
     Args
     ----
@@ -138,8 +142,8 @@ def _russian_roulette_raw(P, Pinf, M, dist, *args, **kargs):
     return part1 + part2
 
 
-def _russian_roulette_hav(P, Pinf, M, dist, *args, **kargs):
-    r"""Russian Roulette infinite product summation with half infinite split trick
+def _russian_roulette_inf_split(P, Pinf, M, dist, *args, **kargs):
+    r"""Infinite product summation with Russian Roulette and infinite split trick
 
     Args
     ----
@@ -321,7 +325,7 @@ class GenericSteadyDist(torch.autograd.Function):
         gamma, _id = torch.max(diags), torch.argmax(diags)
         gamma, _id = gamma.item() + c, _id.item()
 
-        # get Q
+        # get P
         Q = X - diags_mx
         P = torch.eye(k, dtype=Q.dtype, device=Q.device) + Q / gamma
         return P, Q, (gamma, _id)
@@ -521,14 +525,16 @@ def stdy_dist_rrx(X, ind=None, c=0.001, vmin=1e-20, vmax=1, geo_p=0.1, trick='ha
 
     # claim trick dict
     TRICK_DICT = {
-        'sym': _russian_roulette_sym,
-        'raw': _russian_roulette_raw,
-        'hav': _russian_roulette_hav,
+        'rr'   : _russian_roulette,
+        'inf'  : _inf_split,
+        'rrinf': _russian_roulette_inf_split,
     }
 
     # adjust Russian Roulette trick
+    global RR_T
     GenericSteadyDist.GEO_P = geo_p
     GenericSteadyDist.RR    = TRICK_DICT[trick]
+    RR_T                    = 10
 
     # call autograd function class
     return GenericSteadyDist.apply(X, ind, c, vmin, vmax, *args, **kargs)
@@ -561,8 +567,10 @@ def stdy_dist_pow(X, ind=None, c=0.001, vmin=1e-20, vmax=1, *args, **kargs):
     assert len(torch.nonzero(torch.diagonal(X))) == 0
 
     # adjust Russian Roulette trick
+    global RR_T
     GenericSteadyDist.GEO_P = None
     GenericSteadyDist.RR    = None
+    RR_T                    = None
 
     # get necessary attributes
     k = X.size(1)
@@ -573,9 +581,10 @@ def stdy_dist_pow(X, ind=None, c=0.001, vmin=1e-20, vmax=1, *args, **kargs):
     # get P
     P, Q, (gamma, _id) = cls._X2P(k, X, c, dtype=X.dtype, device=X.device)
 
-    # use power to get pi by linear system
+    # use power P^{2^{z}} to get pi by linear system
+    z = 7
     E = P
-    for i in range(7):
+    for i in range(z):
         E = torch.matmul(E, E)
     pi = torch.mean(E, dim=0, keepdim=True)
     pi = torch.clamp(pi, vmin, vmax).squeeze()

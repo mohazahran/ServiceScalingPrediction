@@ -10,6 +10,7 @@ import function as F
 r"""
 Module
 ======
+- **QueueModule**        : Queue module without priori
 - **MMmKModule**         : M/M/m/K Queue module
 - **LBWBModule**         : Leaky Bucket Web Browsing Queue module
 - **CIOModule**          : Circular Input/Output Queue module
@@ -17,6 +18,55 @@ Module
 - **ResiDistLossModule** : Residual steady state distribution loss module
 - **MSEDistLossModule**  : MSE steady state distribution loss module
 """
+
+
+class QueueModule(torch.nn.Module):
+    r"""Queue Module without Priori"""
+    def __init__(self, prior, method, **kargs):
+        r"""Initialize the class
+
+        Args
+        ----
+        prior : data.QueueData
+            Queue prior holder.
+        method : str
+            Steady state distribution method.
+
+        """
+        # super calling
+        torch.nn.Module.__init__(self)
+
+        # save necessary attributes
+        self.prior = prior
+        self.method = method
+        self.kargs = kargs
+        self.k = self.prior.k
+
+        # explicitly allocate parameters
+        self.X = torch.nn.Parameter(torch.Tensor(self.k, self.k))
+
+        # explicitly initialize parameters
+        self.X.data.fill_(0)
+
+    def forward(self, lambd, ind=None):
+        r"""Forwarding
+
+        Args
+        ----
+        lambd : int
+            Input lambda.
+        ind : int or [int, ...]
+            Focusing steady state indices.
+
+        Returns
+        -------
+        dist : torch.Tensor
+            Focusing steady state distribution.
+
+        """
+        # generate matrix
+        X = self.prior.update_input_prior(self.X, lambd)
+        return F.stdy_dist(self.method, X, ind, **self.kargs)
 
 
 class MMmKModule(torch.nn.Module):
@@ -306,8 +356,21 @@ class Task(object):
             'ideal_loss_tr': self.ideal_loss_tr,
             'ideal_loss_te': self.ideal_loss_te,
             'param'        : self.layers.state_dict(),
+            'ideal_param'  : self.test_data.param_dict(),
         }
         torch.save(save_dict, os.path.join(root, "{}.pt".format(name)))
+
+        # output some convergence information
+        fmt1 = "loss: {:.6f} ({:.6f})"
+        fmt2 = "[{}]: {:.3f} ({:.3f})"
+        fmt3 = "[{}]: {} ({:.6f})"
+        print(fmt1.format(min(self.loss_lst_te), self.ideal_loss_te))
+        for name, true_param in self.test_data.param_dict().items():
+            try:
+                pred_param = self.layers.state_dict()[name].data.item()
+                print(fmt2.format(name, float(pred_param), float(true_param)))
+            except:
+                print(fmt3.format(name, 'generic', float(true_param)))
 
     def _single_ffbp(self, ind):
         r"""Single-batch Forwarding and Backwarding
@@ -324,7 +387,10 @@ class Task(object):
             lambd, pi, obvs = self.train_data.samples[idx]
             output = self.layers.forward(lambd)
             loss = self.criterion.forward(self.train_data.ind, output, pi, obvs)
-            loss = loss + self.alpha * torch.norm(self.layers.E)
+            if self.alpha > 0:
+                loss = loss + self.alpha * torch.norm(self.layers.E)
+            else:
+                pass
             loss.backward()
             torch.nn.utils.clip_grad_norm_(self.layers.parameters(), 5)
             self.optimizer.step()
