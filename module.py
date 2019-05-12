@@ -349,6 +349,7 @@ class Task(object):
                 print("force to stop by <{}>".format(msg))
                 break
 
+        # save result
         save_dict = {
             'loss_lst_tr'  : self.loss_lst_tr,
             'loss_lst_te'  : self.loss_lst_te,
