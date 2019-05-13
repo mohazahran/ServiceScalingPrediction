@@ -343,7 +343,7 @@ def mmmmr(num):
     seed = 47
 
     # set sharing configuration
-    data_kargs = dict(k=20, m=10, const_mu=25, epsilon=1e-4, ind=[0, 1], focus=-1)
+    data_kargs = dict(k=20, m=1, const_mu=25, epsilon=1e-4, ind=[0, 1], focus=-1)
 
     # generate data
     train_data = DataMMmK(n=num, lamin=1 , lamax=50, seed=seed - 1, **data_kargs)

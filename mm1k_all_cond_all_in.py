@@ -30,7 +30,6 @@ alpha_str = sys.argv[1]
 
 # create saving folder
 root = "{}_{}_{}_{}_{}".format(case, 'all', ctype, 'all', alpha_str)
-root = '.'
 if os.path.isdir(root):
     pass
 else:

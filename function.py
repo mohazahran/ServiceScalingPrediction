@@ -612,4 +612,5 @@ def stdy_dist(method, *args, **kargs):
         'rrx': stdy_dist_rrx,
         'pow': stdy_dist_pow,
     }
-    return METHOD_DICT[method](*args, **kargs)
+    pi = METHOD_DICT[method](*args, **kargs)
+    return pi
