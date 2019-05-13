@@ -3,6 +3,10 @@ import torch
 import matplotlib.pyplot as plt
 
 # constants
+TITLES = {
+    'mm1k' : 'M/M/1/K',
+    'mmmmr': 'M/M/m/m+r',
+}
 # // STYLES = [
 # //     {'color': 'red'   }, # // 'marker': 'o' 
 # //     {'color': 'orange'}, # // 'marker': '^' 
@@ -112,7 +116,6 @@ def best(case):
 
     """
     # search for best configuration
-    case = 'mm1k'
     num_lst = [1, 5, 10, 25, 50, 100, 200]
     ctype = 'cond'
     magic_lst = ['pow', 'rr', 'inf', 'rrinf']
@@ -134,21 +137,24 @@ def best(case):
                     pass
 
     # export best configuration
+    global CASE
+    global TITLE
     global BEST_NUM
     global BEST_MAGIC
     global BEST_ALPHA_STR
+    CASE, TITLE = case, TITLES[case]
     BEST_NUM, BEST_MAGIC, BEST_ALPHA_STR = best_cfg
     print(best_point, best_cfg)
 
 def mm1k_magic():
     r"""Numerical Method Comparison on M/M/1/K"""
-    title = 'Numerical Method Comparison on M/M/1/K'
-    filename = 'mm1k_magic'
+    title = "Numerical Method Comparison on {}".format(TITLE)
+    filename = "{}_magic".format(CASE)
     fig, ax = plt.subplots(1, 1, figsize=(10, 8))
     ax.set_title(title)
     ax.set_xlabel('#Epochs')
     ax.set_ylabel('MSE Loss of Last State Steady Distribution')
-    case = 'mm1k'
+    case = CASE
     num = BEST_NUM
     ctype = 'cond'
     magic = None
@@ -166,13 +172,13 @@ def mm1k_magic():
 
 def mm1k_num():
     r"""Number of Training Samples Comparison on M/M/1/K"""
-    title = 'Number of Training Samples Comparison on M/M/1/K'
-    filename = 'mm1k_num'
+    title = "Number of Training Samples Comparison on {}".format(TITLE)
+    filename = "{}_num".format(CASE)
     fig, ax = plt.subplots(1, 1, figsize=(10, 8))
     ax.set_title(title)
     ax.set_xlabel('#Samples')
     ax.set_ylabel('MSE Loss of Last State Steady Distribution')
-    case = 'mm1k'
+    case = CASE
     num = None
     ctype = 'cond'
     magic = BEST_MAGIC
@@ -190,13 +196,13 @@ def mm1k_num():
 
 def mm1k_alpha():
     r"""Prior Strength comparison on M/M/1/K"""
-    title = 'Prior Strength Comparison on M/M/1/K'
-    filename = 'mm1k_alpha'
+    title = "Prior Strength Comparison on {}".format(TITLE)
+    filename = "{}_alpha".format(CASE)
     fig, ax = plt.subplots(1, 1, figsize=(10, 8))
     ax.set_title(title)
     ax.set_xlabel('#Samples')
     ax.set_ylabel('MSE Loss of Last State Steady Distribution')
-    case = 'mm1k'
+    case = CASE
     num = BEST_NUM
     ctype = 'cond'
     magic = BEST_MAGIC
@@ -214,6 +220,10 @@ def mm1k_alpha():
 
 # run all visulization
 best('mm1k')
+mm1k_magic()
+mm1k_num()
+mm1k_alpha()
+best('mmmmr')
 mm1k_magic()
 mm1k_num()
 mm1k_alpha()
