@@ -281,7 +281,8 @@ class DataMMmK(QueueData):
 r"""
 Function
 ========
-- **mm1k** : Generate M/M/1/K test case
+- **mm1k**  : Generate M/M/1/K test case
+- **mmmmr** : Generate M/M/m/m+r test case
 """
 
 
@@ -314,5 +315,37 @@ def mm1k(num):
 
     # generate data
     train_data = DataMMmK(n=num, lamin=20, lamax=30, seed=seed - 1, **data_kargs)
+    test_data  = DataMMmK(n=400, lamin=1 , lamax=50, seed=seed + 1, **data_kargs)
+    return seed, train_data, test_data
+
+def mmmmr(num):
+    r"""Generate M/M/m/m+r test case
+
+    Args
+    ----
+    num : int
+        Number of training samples.
+
+    Returns
+    -------
+    seed : int
+        Random seed to use.
+    train_data : object
+        Training data.
+    test_data : object
+        Test data.
+
+    """
+    # global settings decided by data
+    np.set_printoptions(precision=8, suppress=True)
+
+    # set random seed
+    seed = 47
+
+    # set sharing configuration
+    data_kargs = dict(k=20, m=10, const_mu=25, epsilon=1e-4, ind=[0, 1], focus=-1)
+
+    # generate data
+    train_data = DataMMmK(n=num, lamin=1 , lamax=50, seed=seed - 1, **data_kargs)
     test_data  = DataMMmK(n=400, lamin=1 , lamax=50, seed=seed + 1, **data_kargs)
     return seed, train_data, test_data
