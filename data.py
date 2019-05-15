@@ -278,11 +278,408 @@ class DataMMmK(QueueData):
         return {'mu': self.mxargs[0]}
 
 
+class DataLBWB(QueueData):
+    r"""Leaky Bucket Web Browsing Queue Data"""
+    def __init__(self, c, r, b, const_mu, const_bucket, ind, focus, *args, **kargs):
+        r"""Initialize the class
+
+        Args
+        ----
+        c : int
+            Number of web users.
+        r : int
+            Number of request buffer size.
+        b : int
+            Number of response bucket size.
+        const_mu : int
+            Constant mu.
+        const_bucket : int
+            Constant lambda bucket.
+        ind : [int, ...]
+            Focusing state indices.
+        focus : int
+            Ultimate focusing state index for test.
+
+        """
+        # generate transition list
+        self.trans_lst = []
+        for i in range(r + 1):
+            for j in range(b + 1):
+                # pair state
+                src_st = (i, j)
+
+                # request increment (exclude waiting)
+                if i + 1 <= r:
+                    dst_st = (i + 1, j)
+                    mnt = max(0, c - i)
+                    self.trans_lst.append((src_st, dst_st, mnt, 'r'))
+                else:
+                    pass
+
+                # bucket increment
+                if j + 1 <= b:
+                    dst_st = (i, j + 1)
+                    mnt = 1
+                    self.trans_lst.append((src_st, dst_st, mnt, 'b'))
+                else:
+                    pass
+
+                # consume decrement
+                if i - 1 >= 0 and j - 1 >= 0:
+                    dst_st = (i - 1, j - 1)
+                    mnt = 1
+                    self.trans_lst.append((src_st, dst_st, mnt, 'c'))
+                else:
+                    pass
+
+        # enumerate paired states
+        self.st2idx = {}
+        for src_st, dst_st, mnt, _ in self.trans_lst:
+            for st in (src_st, dst_st):
+                if st in self.st2idx:
+                    pass
+                else:
+                    self.st2idx[st] = len(self.st2idx)
+
+        # state allocation
+        self.k = len(self.st2idx)
+        self.mxargs = (const_mu, const_bucket)
+
+        # enumerate paired state arguments
+        ind = [self.st2idx[itr] for itr in ind]
+        focus = self.st2idx[focus]
+
+        # super call
+        QueueData.__init__(self, ind=ind, focus=focus, *args, **kargs)
+
+    def gen_share(self):
+        r"""Generate sharing matrix"""
+        # allocate matrix
+        self.rmx = torch.Tensor(self.k, self.k)
+        self.bmx = torch.Tensor(self.k, self.k)
+        self.cmx = torch.Tensor(self.k, self.k)
+
+        # disable propagation
+        self.rmx.requires_grad = False
+        self.bmx.requires_grad = False
+        self.cmx.requires_grad = False
+
+        # zero all matrix
+        self.rmx.zero_()
+        self.bmx.zero_()
+        self.cmx.zero_()
+
+        # assign sharing values
+        for src_st, dst_st, mnt, hd in self.trans_lst:
+            i, j = self.st2idx[src_st], self.st2idx[dst_st]
+            mx = getattr(self, "{}mx".format(hd))
+            mx[i, j] = mnt
+
+    def zero_prior(self, mx):
+        r"""Zero out given matrix based on sharing prior
+
+        Args
+        ----
+        mx : torch.Tensor
+            Matrix.
+
+        Returns
+        -------
+        mx : torch.Tensor
+            Zero-out matrix.
+
+        """
+        # diagonal line should always be zero
+        for i in range(min(mx.size())):
+            mx.data[i, i] = 0
+
+        # non-zero sharing position should always be zero
+        for i, j in torch.nonzero(self.rmx):
+            mx.data[i, j] = 0
+        for i, j in torch.nonzero(self.bmx):
+            mx.data[i, j] = 0
+        for i, j in torch.nonzero(self.cmx):
+            mx.data[i, j] = 0
+        return mx
+
+    def mx(self, noise, lambd, mu, bucket):
+        r"""Construct data matrix
+
+        Args
+        ----
+        noise : torch.Tensor
+            Noise tensor.
+        lambd : float
+            Input rate lambda.
+        mu : float
+            Output rate lambda.
+        bucket : float
+            Bucket rate lambda.
+
+        Returns
+        -------
+        X : torch.Tensor
+            Data matrix for given lambda.
+
+        """
+        # construct matrix
+        X = noise + lambd * self.rmx + mu * self.cmx + bucket * self.bmx
+        return X
+
+    def update_input_prior(self, mx, lambd):
+        r"""Construct data matrix
+
+        Args
+        ----
+        mx : torch.Tensor
+            Matrix tensor to update.
+        lambd : float
+            Input rate lambda.
+
+        Returns
+        -------
+        mx : torch.Tensor
+            Data matrix updated by input.
+
+        """
+        # diagonal line should always be zero
+        for i in range(min(mx.size())):
+            mx.data[i, i] = 0
+
+        # input (upper diagonal) line should be given value
+        for i, j in torch.nonzero(self.rmx):
+            mx.data[i, j] = lambd
+        return mx
+
+    def param_dict(self):
+        r"""Return truth parameter corresponding to the model
+
+        Returns
+        -------
+        param_dict : dict
+            Named parameter.
+
+        """
+        # name necessary parameter
+        return {'mu': self.mxargs[0], 'bucket': self.mxargs[1]}
+
+
+class DataCIO(QueueData):
+    r"""Circular Input/Output Queue Data"""
+    def __init__(self, s, a1, a2, b, const_mu, proba1, ind, focus, *args, **kargs):
+        r"""Initialize the class
+
+        Args
+        ----
+        s : int
+            Total number of packets in closure.
+        a1 : int
+            Number of input buffer 1.
+        a2 : int
+            Number of input buffer 2.
+        b : int
+            Number of output buffer.
+        const_mu : int
+            Constant mu.
+        proba1 : float
+            Probability of a packet from output buffer to input buffer 1.
+        ind : [int, ...]
+            Focusing state indices.
+        focus : int
+            Ultimate focusing state index for test.
+
+        """
+        # generate transition list
+        self.trans_lst = []
+        for i1 in range(a1 + 1):
+            for i2 in range(a2 + 1):
+                for j in range(b + 1):
+                    # pair state
+                    if i1 + i2 + j == s:
+                        src_st = (i1, i2, j)
+                    else:
+                        continue
+    
+                    # input 1 decrement
+                    if i1 - 1 >= 0 and j + 1 <= b:
+                        dst_st = (i1 - 1, i2, j + 1)
+                        mnt = 1
+                        self.trans_lst.append((src_st, dst_st, mnt, 'i1o'))
+                    else:
+                        pass
+    
+                    # input 2 decrement
+                    if i2 - 1 >= 0 and j + 1 <= b:
+                        dst_st = (i1, i2 - 1, j + 1)
+                        mnt = 1
+                        self.trans_lst.append((src_st, dst_st, mnt, 'i2o'))
+                    else:
+                        pass
+    
+                    # input 1 increment
+                    if i1 + 1 <= a1 and j - 1 >= 0:
+                        dst_st = (i1 + 1, i2, j - 1)
+                        mnt = 1
+                        self.trans_lst.append((src_st, dst_st, mnt, 'oi1'))
+                    else:
+                        pass
+    
+                    # input 2 increment
+                    if i2 + 1 <= a1 and j - 1 >= 0:
+                        dst_st = (i1, i2 + 1, j - 1)
+                        mnt = 1
+                        self.trans_lst.append((src_st, dst_st, mnt, 'oi2'))
+                    else:
+                        pass
+
+
+        # enumerate paired states
+        self.st2idx = {}
+        for src_st, dst_st, mnt, _ in self.trans_lst:
+            for st in (src_st, dst_st):
+                if st in self.st2idx:
+                    pass
+                else:
+                    self.st2idx[st] = len(self.st2idx)
+
+        # state allocation
+        self.k = len(self.st2idx)
+        self.proba1 = proba1
+        self.mxargs = (const_mu,)
+
+        # enumerate paired state arguments
+        ind = [self.st2idx[itr] for itr in ind]
+        focus = self.st2idx[focus]
+
+        # super call
+        QueueData.__init__(self, ind=ind, focus=focus, *args, **kargs)
+
+    def gen_share(self):
+        r"""Generate sharing matrix"""
+        # allocate matrix
+        self.i1omx = torch.Tensor(self.k, self.k)
+        self.i2omx = torch.Tensor(self.k, self.k)
+        self.oi1mx = torch.Tensor(self.k, self.k)
+        self.oi2mx = torch.Tensor(self.k, self.k)
+
+        # disable propagation
+        self.i1omx.requires_grad = False
+        self.i2omx.requires_grad = False
+        self.oi1mx.requires_grad = False
+        self.oi2mx.requires_grad = False
+
+        # zero all matrix
+        self.i1omx.zero_()
+        self.i2omx.zero_()
+        self.oi1mx.zero_()
+        self.oi2mx.zero_()
+
+        # assign sharing values
+        for src_st, dst_st, mnt, hd in self.trans_lst:
+            i, j = self.st2idx[src_st], self.st2idx[dst_st]
+            mx = getattr(self, "{}mx".format(hd))
+            mx[i, j] = mnt
+
+    def zero_prior(self, mx):
+        r"""Zero out given matrix based on sharing prior
+
+        Args
+        ----
+        mx : torch.Tensor
+            Matrix.
+
+        Returns
+        -------
+        mx : torch.Tensor
+            Zero-out matrix.
+
+        """
+        # diagonal line should always be zero
+        for i in range(min(mx.size())):
+            mx.data[i, i] = 0
+
+        # non-zero sharing position should always be zero
+        for i, j in torch.nonzero(self.i1omx):
+            mx.data[i, j] = 0
+        for i, j in torch.nonzero(self.i2omx):
+            mx.data[i, j] = 0
+        for i, j in torch.nonzero(self.oi1mx):
+            mx.data[i, j] = 0
+        for i, j in torch.nonzero(self.oi2mx):
+            mx.data[i, j] = 0
+        return mx
+
+    def mx(self, noise, lambd, mu):
+        r"""Construct data matrix
+
+        Args
+        ----
+        noise : torch.Tensor
+            Noise tensor.
+        lambd : float
+            Input rate lambda.
+        mu : float
+            Output rate lambda.
+
+        Returns
+        -------
+        X : torch.Tensor
+            Data matrix for given lambda.
+
+        """
+        # construct matrix
+        I = lambd * self.i1omx + lambd * self.i1omx
+        O = mu * self.oi1mx * self.proba1 + mu * self.oi2mx * (1 - self.proba1)
+        X = noise + I + O
+        return X
+
+    def update_input_prior(self, mx, lambd):
+        r"""Construct data matrix
+
+        Args
+        ----
+        mx : torch.Tensor
+            Matrix tensor to update.
+        lambd : float
+            Input rate lambda.
+
+        Returns
+        -------
+        mx : torch.Tensor
+            Data matrix updated by input.
+
+        """
+        # diagonal line should always be zero
+        for i in range(min(mx.size())):
+            mx.data[i, i] = 0
+
+        # input (upper diagonal) line should be given value
+        for i, j in torch.nonzero(self.i1omx):
+            mx.data[i, j] = lambd
+        for i, j in torch.nonzero(self.i2omx):
+            mx.data[i, j] = lambd
+        return mx
+
+    def param_dict(self):
+        r"""Return truth parameter corresponding to the model
+
+        Returns
+        -------
+        param_dict : dict
+            Named parameter.
+
+        """
+        # name necessary parameter
+        return {'mu': self.mxargs[0]}
+
+
 r"""
 Function
 ========
 - **mm1k**  : Generate M/M/1/K test case
 - **mmmmr** : Generate M/M/m/m+r test case
+- **lbwb**  : Generate Leaky Bucket Web Browsing test case
+- **cio**   : Generate Circular Input/Output test case
 """
 
 
@@ -318,6 +715,7 @@ def mm1k(num):
     test_data  = DataMMmK(n=400, lamin=1 , lamax=50, seed=seed + 1, **data_kargs)
     return seed, train_data, test_data
 
+
 def mmmmr(num):
     r"""Generate M/M/m/m+r test case
 
@@ -348,4 +746,83 @@ def mmmmr(num):
     # generate data
     train_data = DataMMmK(n=num, lamin=1 , lamax=50, seed=seed - 1, **data_kargs)
     test_data  = DataMMmK(n=400, lamin=1 , lamax=50, seed=seed + 1, **data_kargs)
+    return seed, train_data, test_data
+
+
+def lbwb(num):
+    r"""Generate Leaky Bucket Web Browsing test case
+
+    Args
+    ----
+    num : int
+        Number of training samples.
+
+    Returns
+    -------
+    seed : int
+        Random seed to use.
+    train_data : object
+        Training data.
+    test_data : object
+        Test data.
+
+    """
+    # global settings decided by data
+    np.set_printoptions(precision=8, suppress=True)
+
+    # set random seed
+    seed = 47
+
+    # set sharing configuration
+    data_kargs = dict(
+        c=7, r=5, b=3, const_mu=25, const_bucket=15, epsilon=1e-4,
+        ind=[(0, 0), (0, 1), (1, 0), (1, 1)], focus=(5, 3))
+
+    # generate data
+    train_data = DataLBWB(n=num, lamin=1 , lamax=50, seed=seed - 1, **data_kargs)
+    test_data  = DataLBWB(n=400, lamin=1 , lamax=50, seed=seed + 1, **data_kargs)
+    return seed, train_data, test_data
+
+
+def cio(num):
+    r"""Generate Circular Input/Output test case
+
+    Args
+    ----
+    num : int
+        Number of training samples.
+
+    Returns
+    -------
+    seed : int
+        Random seed to use.
+    train_data : object
+        Training data.
+    test_data : object
+        Test data.
+
+    """
+    # global settings decided by data
+    np.set_printoptions(precision=8, suppress=True)
+
+    # set random seed
+    seed = 47
+
+    # set sharing configuration
+    s, a1, a2, b = 7, 5, 5, 5
+    ind = []
+    for i1 in range(a1 + 1):
+        for i2 in range(a2 + 1):
+            for j in (0, 1):
+                if i1 + i2 + j == s:
+                    ind.append((i1, i2, j))
+                else:
+                    pass
+    data_kargs = dict(
+        s=s, a1=a1, a2=a2, b=b, const_mu=25, proba1=0.625, epsilon=1e-4,
+        ind=ind, focus=(1, 1, 5))
+
+    # generate data
+    train_data = DataCIO(n=num, lamin=1 , lamax=50, seed=seed - 1, **data_kargs)
+    test_data  = DataCIO(n=400, lamin=1 , lamax=50, seed=seed + 1, **data_kargs)
     return seed, train_data, test_data

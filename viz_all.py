@@ -104,7 +104,7 @@ def add_glyph(ax, case, num, ctype, magic, alpha_str, label, maxlen=None, **karg
     # visualize the glyph
     xdata = list(range(maxlen))
     ydata = ydata[0:maxlen]
-    ax.plot(xdata, ydata, label=label, markevery=freq, alpha=0.5, **kargs)
+    ax.plot(xdata, ydata, label=label, markevery=freq, alpha=0.85, **kargs)
 
 def best(case):
     r"""Find best configuration for given case
@@ -116,10 +116,10 @@ def best(case):
 
     """
     # search for best configuration
-    num_lst = [1, 5, 10, 25, 50, 100, 200]
+    num_lst = [200] # // [1, 5, 10, 25, 50, 100, 200]
     ctype = 'cond'
-    magic_lst = ['pow', 'rr', 'inf', 'rrinf']
-    alpha_str_lst = ['-1', '0', '0.01', '0.1', '1', '10']
+    magic_lst = ['7', '4', 'rr', 'inf', 'rrinf']
+    alpha_str_lst = ['1'] # // ['-1', '0', '0.01', '0.1', '1', '10']
     best_point, best_cfg = None, None
     for num in num_lst:
         for magic in magic_lst:
@@ -159,8 +159,8 @@ def mm1k_magic():
     ctype = 'cond'
     magic = None
     alpha_str = BEST_ALPHA_STR
-    enum_lst = ['pow', 'rr', 'inf', 'rrinf']
-    label_lst = ['Power', 'RR', 'Inf', 'RR-Inf']
+    enum_lst = ['7', '4', 'rr', 'inf', 'rrinf']
+    label_lst = [r'$2^7$', r'$2^4$', 'RR', 'Inf', 'RR-Inf']
     maxlen = None
     for i, magic in enumerate(enum_lst):
         style = {} # // STYLES[i]
@@ -221,9 +221,9 @@ def mm1k_alpha():
 # run all visulization
 best('mm1k')
 mm1k_magic()
-mm1k_num()
-mm1k_alpha()
-best('mmmmr')
-mm1k_magic()
-mm1k_num()
-mm1k_alpha()
+# // mm1k_num()
+# // mm1k_alpha()
+# // best('mmmmr')
+# // mm1k_magic()
+# // mm1k_num()
+# // mm1k_alpha()

@@ -286,6 +286,7 @@ class GenericSteadyDist(torch.autograd.Function):
         # integrate all gradients, coefficients and factors
         grad_to_X = cls._integrate(grad_from_prev, fact_S, coeff_S)
         grad_to_X = grad_to_X.view(k, k)
+        grad_to_X[grad_to_X != grad_to_X] = 0
         return grad_to_X, None, None, None, None, None
 
     @staticmethod
@@ -540,7 +541,7 @@ def stdy_dist_rrx(X, ind=None, c=0.001, vmin=1e-20, vmax=1, geo_p=0.1, trick='ha
     return GenericSteadyDist.apply(X, ind, c, vmin, vmax, *args, **kargs)
 
 
-def stdy_dist_pow(X, ind=None, c=0.001, vmin=1e-20, vmax=1, *args, **kargs):
+def stdy_dist_pow(X, ind=None, c=0.001, vmin=1e-20, vmax=1, trick='7', *args, **kargs):
     r"""Steady state distribution by power method
 
     Args
@@ -555,6 +556,8 @@ def stdy_dist_pow(X, ind=None, c=0.001, vmin=1e-20, vmax=1, *args, **kargs):
         Lower bound of output dimensions.
     vmax : float
         Upper bound of output dimensions.
+    trick : str
+        Power order (base 2) of power to use.
 
     Returns
     -------
@@ -582,7 +585,7 @@ def stdy_dist_pow(X, ind=None, c=0.001, vmin=1e-20, vmax=1, *args, **kargs):
     P, Q, (gamma, _id) = cls._X2P(k, X, c, dtype=X.dtype, device=X.device)
 
     # use power P^{2^{z}} to get pi by linear system
-    z = 7
+    z = int(trick)
     E = P
     for i in range(z):
         E = torch.matmul(E, E)

@@ -90,7 +90,114 @@ class MMmKModule(torch.nn.Module):
         self.method = method
         self.kargs = kargs
         self.k = self.prior.k
-        self.m = self.prior.m
+
+        # explicitly allocate parameters
+        self.mu = torch.nn.Parameter(torch.Tensor(1))
+        self.E = torch.nn.Parameter(torch.Tensor(self.k, self.k))
+        self.mxargs = (self.mu,)
+
+        # explicitly initialize parameters
+        self.mu.data.fill_(1)
+        self.E.data.fill_(0)
+
+    def forward(self, lambd, ind=None):
+        r"""Forwarding
+
+        Args
+        ----
+        lambd : int
+            Input lambda.
+        ind : int or [int, ...]
+            Focusing steady state indices.
+
+        Returns
+        -------
+        dist : torch.Tensor
+            Focusing steady state distribution.
+
+        """
+        # generate matrix
+        self.E = self.prior.zero_prior(self.E)
+        X = self.prior.mx(self.E, lambd, *self.mxargs)
+        return F.stdy_dist(self.method, X, ind, **self.kargs)
+
+
+class LBWBModule(torch.nn.Module):
+    r"""Leaky Bucket Web Browsing Queue Module"""
+    def __init__(self, prior, method, **kargs):
+        r"""Initialize the class
+
+        Args
+        ----
+        prior : data.QueueData
+            Queue prior holder.
+        method : str
+            Steady state distribution method.
+
+        """
+        # super calling
+        torch.nn.Module.__init__(self)
+
+        # save necessary attributes
+        self.prior = prior
+        self.method = method
+        self.kargs = kargs
+        self.k = self.prior.k
+
+        # explicitly allocate parameters
+        self.mu = torch.nn.Parameter(torch.Tensor(1))
+        self.bucket = torch.nn.Parameter(torch.Tensor(1))
+        self.E = torch.nn.Parameter(torch.Tensor(self.k, self.k))
+        self.mxargs = (self.mu, self.bucket)
+
+        # explicitly initialize parameters
+        self.mu.data.fill_(1)
+        self.bucket.data.fill_(1)
+        self.E.data.fill_(0)
+
+    def forward(self, lambd, ind=None):
+        r"""Forwarding
+
+        Args
+        ----
+        lambd : int
+            Input lambda.
+        ind : int or [int, ...]
+            Focusing steady state indices.
+
+        Returns
+        -------
+        dist : torch.Tensor
+            Focusing steady state distribution.
+
+        """
+        # generate matrix
+        self.E = self.prior.zero_prior(self.E)
+        X = self.prior.mx(self.E, lambd, *self.mxargs)
+        return F.stdy_dist(self.method, X, ind, **self.kargs)
+
+
+class CIOModule(MMmKModule):
+    r"""Circular Input/Output Queue Module"""
+    def __init__(self, prior, method, **kargs):
+        r"""Initialize the class
+
+        Args
+        ----
+        prior : data.QueueData
+            Queue prior holder.
+        method : str
+            Steady state distribution method.
+
+        """
+        # super calling
+        torch.nn.Module.__init__(self)
+
+        # save necessary attributes
+        self.prior = prior
+        self.method = method
+        self.kargs = kargs
+        self.k = self.prior.k
 
         # explicitly allocate parameters
         self.mu = torch.nn.Parameter(torch.Tensor(1))

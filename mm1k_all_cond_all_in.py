@@ -16,7 +16,8 @@ num_lst = [
 
 # numerical method list
 magic_lst = [
-    {'method': 'pow', 'trick': 'pow'  },
+    {'method': 'pow', 'trick': '7'    },
+    {'method': 'pow', 'trick': '4'    },
     {'method': 'rrx', 'trick': 'rrinf'},
     {'method': 'rrx', 'trick': 'inf'  },
     {'method': 'rrx', 'trick': 'rr'   },
