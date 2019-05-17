@@ -712,7 +712,7 @@ def mm1k(num):
 
     # generate data
     train_data = DataMMmK(n=num, lamin=20, lamax=30, seed=seed - 1, **data_kargs)
-    test_data  = DataMMmK(n=400, lamin=1 , lamax=50, seed=seed + 1, **data_kargs)
+    test_data  = DataMMmK(n=50 , lamin=1 , lamax=50, seed=seed + 1, **data_kargs)
     return seed, train_data, test_data
 
 
@@ -745,7 +745,7 @@ def mmmmr(num):
 
     # generate data
     train_data = DataMMmK(n=num, lamin=1 , lamax=50, seed=seed - 1, **data_kargs)
-    test_data  = DataMMmK(n=400, lamin=1 , lamax=50, seed=seed + 1, **data_kargs)
+    test_data  = DataMMmK(n=50 , lamin=1 , lamax=50, seed=seed + 1, **data_kargs)
     return seed, train_data, test_data
 
 
@@ -775,54 +775,57 @@ def lbwb(num):
 
     # set sharing configuration
     data_kargs = dict(
-        c=7, r=5, b=3, const_mu=25, const_bucket=15, epsilon=1e-4,
-        ind=[(0, 0), (0, 1), (1, 0), (1, 1)], focus=(5, 3))
+        c=5, r=3, b=2, const_mu=25, const_bucket=15, epsilon=1e-4,
+        ind=[(0, 0), (0, 1), (1, 0), (1, 1)], focus=(3, 2))
 
     # generate data
     train_data = DataLBWB(n=num, lamin=1 , lamax=50, seed=seed - 1, **data_kargs)
-    test_data  = DataLBWB(n=400, lamin=1 , lamax=50, seed=seed + 1, **data_kargs)
+    test_data  = DataLBWB(n=50 , lamin=1 , lamax=50, seed=seed + 1, **data_kargs)
     return seed, train_data, test_data
 
 
-def cio(num):
-    r"""Generate Circular Input/Output test case
-
-    Args
-    ----
-    num : int
-        Number of training samples.
-
-    Returns
-    -------
-    seed : int
-        Random seed to use.
-    train_data : object
-        Training data.
-    test_data : object
-        Test data.
-
-    """
-    # global settings decided by data
-    np.set_printoptions(precision=8, suppress=True)
-
-    # set random seed
-    seed = 47
-
-    # set sharing configuration
-    s, a1, a2, b = 7, 5, 5, 5
-    ind = []
-    for i1 in range(a1 + 1):
-        for i2 in range(a2 + 1):
-            for j in (0, 1):
-                if i1 + i2 + j == s:
-                    ind.append((i1, i2, j))
-                else:
-                    pass
-    data_kargs = dict(
-        s=s, a1=a1, a2=a2, b=b, const_mu=25, proba1=0.625, epsilon=1e-4,
-        ind=ind, focus=(1, 1, 5))
-
-    # generate data
-    train_data = DataCIO(n=num, lamin=1 , lamax=50, seed=seed - 1, **data_kargs)
-    test_data  = DataCIO(n=400, lamin=1 , lamax=50, seed=seed + 1, **data_kargs)
-    return seed, train_data, test_data
+# // def cio(num):
+# //     r"""Generate Circular Input/Output test case
+# // 
+# //     Args
+# //     ----
+# //     num : int
+# //         Number of training samples.
+# // 
+# //     Returns
+# //     -------
+# //     seed : int
+# //         Random seed to use.
+# //     train_data : object
+# //         Training data.
+# //     test_data : object
+# //         Test data.
+# // 
+# //     """
+# //     # global settings decided by data
+# //     np.set_printoptions(precision=8, suppress=True)
+# // 
+# //     # set random seed
+# //     seed = 47
+# // 
+# //     # set sharing configuration
+# //     s, a1, a2, b = 5, 3, 3, 3
+# //     ind = []
+# //     for i1 in range(a1 + 1):
+# //         for i2 in range(a2 + 1):
+# //             for j in (0, 1):
+# //                 if i1 + i2 + j == s:
+# //                     ind.append((i1, i2, j))
+# //                 else:
+# //                     pass
+# //     data_kargs = dict(
+# //         s=s, a1=a1, a2=a2, b=b, const_mu=25, proba1=0.5, epsilon=1e-4,
+# //         ind=ind, focus=(1, 1, 3))
+# // 
+# //     # generate data
+# //     train_data = DataCIO(n=num, lamin=1 , lamax=50, seed=seed - 1, **data_kargs)
+# //     test_data  = DataCIO(n=50 , lamin=1 , lamax=50, seed=seed + 1, **data_kargs)
+# //     for itr in test_data.samples:
+# //         print(itr[1][test_data.focus])
+# // 
+# //     return seed, train_data, test_data
