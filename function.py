@@ -183,6 +183,7 @@ r"""
 Autograd
 ========
 - **GenericSteadyDist** : Differentiable steady state distribution function for generic queue process
+- **OptimSteadyDist**   : Differentiable steady state distribution function optimized for some queue process
 """
 
 
@@ -485,16 +486,174 @@ class GenericSteadyDist(torch.autograd.Function):
         return grad
 
 
+class OptimSteadyDist(GenericSteadyDist):
+    r"""Differentiable steady state distribution function optimizerd for some queue process"""
+    # constants
+    GEO_P = 0.1
+    RR = None
+
+    @staticmethod
+    def forward(ctx, X, ind=None, pos=None, c=0.001, vmin=1e-20, vmax=1, solver=_numpy_solve):
+        r"""Forwarding
+
+        Args
+        ----
+        X : torch.Tensor
+            Queue matrix.
+        ind : None or int or [int, ...]
+            Specify the indices to select.
+        pos : [tuple, ...]
+            A list of positions that need backpropagation.
+        c : float
+            Uniform normalization offset.
+        vmin : float
+            Lower bound of output dimensions.
+        vmax : float
+            Upper bound of output dimensions.
+        solver : func
+            Linear sysmtem solver.
+
+        Returns
+        -------
+        pi : torch.Tensor
+            Steady state distribution vector.
+
+        """
+        # cache necessary attributes for backwarding
+        ctx.pos = pos
+
+        # return selected distribution
+        return GenericSteadyDist.forward(ctx, X, ind, c, vmin, vmax, solver)
+
+    @staticmethod
+    def backward(ctx, grad_from_prev):
+        r"""Backwarding
+
+        Args
+        ----
+        grad_from_prev : torch.Tensor
+            Cumulative gradients from previous steps.
+
+        Returns
+        -------
+        grad_to_next : torch.Tensor
+            Cumulative gradients to next step.
+
+        """
+        # fetch necessary attributes to local
+        k     = ctx.k
+        gamma = ctx.gamma
+        _id   = ctx._id
+        Q     = ctx.Q
+        P     = ctx.P
+        pi    = ctx.pi
+        ind   = ctx.ind
+        pos   = ctx.pos
+        cls   = OptimSteadyDist
+
+        # construct selection gradient factor
+        fact_S = cls._fact_S(k, ind, dtype=P.dtype, device=P.device)
+
+        # construct uniform normalization gradient coefficient
+        coeff_gamma = cls._coeff_gamma(k, _id, dtype=P.dtype, device=P.device)
+
+        # construct P construction gradient coefficient
+        coeff_P = cls._coeff_P(k, P, Q, gamma, coeff_gamma, pos, dtype=P.dtype, device=P.device)
+
+        # construct selection gradient coefficient
+        coeff_S = cls._coeff_S(k, P, pi, coeff_P)
+
+        # integrate all gradients, coefficients and factors
+        grad_to_X = cls._integrate(grad_from_prev, fact_S, coeff_S)
+        grad_to_X[grad_to_X != grad_to_X] = 0
+
+        # put gradients to corresponding position
+        mx_grad_to_X = torch.zeros(k, k, dtype=grad_to_X.dtype, device=grad_to_X.device)
+        for (i, j), val in zip(pos, grad_to_X):
+            mx_grad_to_X[i, j] = val
+        return mx_grad_to_X, None, None, None, None, None
+
+    @staticmethod
+    def _coeff_P(k, P, Q, gamma, coeff_gamma, pos, dtype, device):
+        r"""Construct uniform normalization gradient coefficient
+
+        Args
+        ----
+        k : int
+            Number of transition states.
+        P : torch.Tensor
+            Tensor P.
+        Q : torch.Tensor
+            Tensor Q.
+        gamma : float
+            Gamma.
+        coeff_gamma : torch.Tensor
+            Uniform normalization gradient coefficient tensor.
+        pos : [tuple, ...]
+            A list of positions that need backpropagation.
+        dtype : torch.dtype
+            Tensor dtype.
+        device : torch.device
+            Tensor dtype.
+
+        Returns
+        ------
+        coeff : torch.Tensor
+            Uniform normalization gradient coefficient tensor.
+
+        """
+        # construct Q construction gradient coefficient
+        coeff_Q = torch.zeros(len(pos), k, k, dtype=dtype, device=device)
+        for x, (i, j) in enumerate(pos):
+            coeff_Q[x, i, j] = 1
+            coeff_Q[x, i, i] = -1
+
+        # construct P construction gradient coefficient
+        coeff_P = torch.zeros(len(pos), k, k, dtype=dtype, device=device)
+        for x, (i, j) in enumerate(pos):
+            coeff_P[x] = torch.mul(coeff_Q[x], gamma) - torch.mul(Q, coeff_gamma[i])
+            coeff_P[x] = torch.div(coeff_P[x], gamma ** 2)
+        return coeff_P
+
+    @staticmethod
+    def _integrate(grad_from_prev, fact, coeff):
+        r"""Integrate all gradients, coefficients and factors
+
+        Args
+        ----
+        grad_from_prev : torch.Tensor
+            Cumulative gradients from previous steps.
+        fact : torch.Tensor
+            Selection gradient factor tensor.
+        coeff : torch.Tensor
+            Selection gradient coefficient tensor.
+
+        Returns
+        ------
+        grad : torch.Tensor
+            Integrated gradient tensor,
+
+        """
+        # integrate all gradients, coefficients and factors
+        grad_lst = []
+        for grad_itr, fact_itr in zip(grad_from_prev, fact):
+            grad = grad_itr * torch.sum(fact_itr * coeff, (1, 2))
+            grad_lst.append(grad)
+        grad = torch.stack(grad_lst).sum(dim=0)
+        return grad
+
+
 r"""
 Function
 ========
-- **stdy_dist_rrx** : Russian Roulette Steady State Distribution Function
-- **stdy_dist_pow** : Power Method Steady State Distribution Function
-- **stdy_dist**     : Steady State Distribution Function Interface
+- **stdy_dist_rrx**       : Russian Roulette Steady State Distribution Function
+- **stdy_dist_pow**       : Power Method Steady State Distribution Function
+- **stdy_dist**           : Steady State Distribution Function Interface
+- **optim_stdy_dist_rrx** : Russian Roulette Steady State Distribution Function
 """
 
 
-def stdy_dist_rrx(X, ind=None, c=0.001, vmin=1e-20, vmax=1, geo_p=0.1, trick='hav', *args, **kargs):
+def stdy_dist_rrx(X, ind=None, c=0.001, vmin=1e-20, vmax=1, geo_p=0.1, trick='rrinf', *args, **kargs):
     r"""Steady state distribution by Russian Roulette
 
     Args
@@ -617,3 +776,54 @@ def stdy_dist(method, *args, **kargs):
     }
     pi = METHOD_DICT[method](*args, **kargs)
     return pi
+
+
+def optim_stdy_dist_rrx(X, ind=None, pos=None, c=0.001, vmin=1e-20, vmax=1, geo_p=0.1, trick='rrinf',
+                        *args, **kargs):
+    r"""Steady state distribution by Russian Roulette
+
+    Args
+    ----
+    X : torch.Tensor
+        Queue matrix.
+    ind : None or int or [int, ...]
+        Specify the indices to select.
+    pos : [tuple, ...]
+        A list of positions that need backpropagation.
+    c : float
+        Uniform normalization offset.
+    vmin : float
+        Lower bound of output dimensions.
+    vmax : float
+        Upper bound of output dimensions.
+    geo_p : float
+        Geometry distrbution parameters.
+    trick : str
+        Raussian Roulette trick to use.
+
+    Returns
+    -------
+    pi : torch.Tensor
+        Steady state distribution vector.
+
+    """
+    # assertion
+    assert len(X.size()) == 2
+    assert len(torch.nonzero(torch.diagonal(X))) == 0
+    assert pos is not None
+
+    # claim trick dict
+    TRICK_DICT = {
+        'rr'   : _russian_roulette,
+        'inf'  : _inf_split,
+        'rrinf': _russian_roulette_inf_split,
+    }
+
+    # adjust Russian Roulette trick
+    global RR_T
+    OptimSteadyDist.GEO_P = geo_p
+    OptimSteadyDist.RR    = TRICK_DICT[trick]
+    RR_T                  = 10
+
+    # call autograd function class
+    return OptimSteadyDist.apply(X, ind, pos, c, vmin, vmax, *args, **kargs)
