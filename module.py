@@ -65,7 +65,7 @@ class QueueModule(torch.nn.Module):
 
         """
         # ensure valid parameters
-        self.zero_nan(self.X)
+        self.zero_biz(self.X)
 
         # generate matrix
         X = self.prior.update_input_prior(self.X, lambd)
