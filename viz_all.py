@@ -56,24 +56,19 @@ def early_stop_fix(data):
     # generate new loss with early stopping
     es_tr, es_te = [], []
     for itr_tr, itr_te in zip(data_tr, data_te):
-        # if len(es_tr) == 0:
-        #     es_tr.append(itr_tr)
-        #     es_te.append(itr_te)
-        # elif itr_tr < es_tr[-1]:
-        #     es_tr.append(itr_tr)
-        #     es_te.append(itr_te)
-        # else:
-        #     es_tr.append(es_tr[-1])
-        #     es_te.append(es_te[-1])
-        for (itr, es) in ((itr_tr, es_tr), (itr_te, es_te)):
-            if len(es) == 0:
-                es.append(itr)
-            else:
-                es.append(min(es[-1], itr))
+        if len(es_tr) == 0:
+            es_tr.append(itr_tr)
+            es_te.append(itr_te)
+        elif itr_tr < es_tr[-1]:
+            es_tr.append(itr_tr)
+            es_te.append(itr_te)
+        else:
+            es_tr.append(es_tr[-1])
+            es_te.append(es_te[-1])
     return {'loss_lst_tr': es_tr, 'loss_lst_te': es_te}
 
 # fixing function
-_fix = early_stop_fix # null_fix
+_fix = null_fix
 
 def add_glyph(ax, case, part, num, ctype, magic, alpha_str, label, maxlen=None, **kargs):
     r"""Add a Glyph to given axis

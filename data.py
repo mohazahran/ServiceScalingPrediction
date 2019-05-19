@@ -628,7 +628,7 @@ class DataCIO(QueueData):
 
         """
         # construct matrix
-        I = lambd * self.i1omx + lambd * self.i1omx
+        I = lambd * self.i1omx + lambd * self.i2omx
         O = mu * self.oi1mx * self.proba1 + mu * self.oi2mx * (1 - self.proba1)
         X = noise + I + O
         return X
@@ -784,48 +784,38 @@ def lbwb(num):
     return seed, train_data, test_data
 
 
-# // def cio(num):
-# //     r"""Generate Circular Input/Output test case
-# // 
-# //     Args
-# //     ----
-# //     num : int
-# //         Number of training samples.
-# // 
-# //     Returns
-# //     -------
-# //     seed : int
-# //         Random seed to use.
-# //     train_data : object
-# //         Training data.
-# //     test_data : object
-# //         Test data.
-# // 
-# //     """
-# //     # global settings decided by data
-# //     np.set_printoptions(precision=8, suppress=True)
-# // 
-# //     # set random seed
-# //     seed = 47
-# // 
-# //     # set sharing configuration
-# //     s, a1, a2, b = 5, 3, 3, 3
-# //     ind = []
-# //     for i1 in range(a1 + 1):
-# //         for i2 in range(a2 + 1):
-# //             for j in (0, 1):
-# //                 if i1 + i2 + j == s:
-# //                     ind.append((i1, i2, j))
-# //                 else:
-# //                     pass
-# //     data_kargs = dict(
-# //         s=s, a1=a1, a2=a2, b=b, const_mu=25, proba1=0.5, epsilon=1e-4,
-# //         ind=ind, focus=(1, 1, 3))
-# // 
-# //     # generate data
-# //     train_data = DataCIO(n=num, lamin=1 , lamax=50, seed=seed - 1, **data_kargs)
-# //     test_data  = DataCIO(n=50 , lamin=1 , lamax=50, seed=seed + 1, **data_kargs)
-# //     for itr in test_data.samples:
-# //         print(itr[1][test_data.focus])
-# // 
-# //     return seed, train_data, test_data
+def cio(num):
+    r"""Generate Circular Input/Output test case
+
+    Args
+    ----
+    num : int
+        Number of training samples.
+
+    Returns
+    -------
+    seed : int
+        Random seed to use.
+    train_data : object
+        Training data.
+    test_data : object
+        Test data.
+
+    """
+    # global settings decided by data
+    np.set_printoptions(precision=8, suppress=True)
+
+    # set random seed
+    seed = 47
+
+    # set sharing configuration
+    s, a1, a2, b = 6, 4, 4, 2
+    ind = [(3, 3, 0), (2, 3, 1), (3, 2, 1), (2, 4, 0), (4, 2, 0)]
+    data_kargs = dict(
+        s=s, a1=a1, a2=a2, b=b, const_mu=25, proba1=0.5, epsilon=1e-4,
+        ind=ind, focus=(2, 2, 2))
+
+    # generate data
+    train_data = DataCIO(n=num, lamin=1 , lamax=50, seed=seed - 1, **data_kargs)
+    test_data  = DataCIO(n=50 , lamin=1 , lamax=50, seed=seed + 1, **data_kargs)
+    return seed, train_data, test_data

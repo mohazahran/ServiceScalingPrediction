@@ -287,6 +287,8 @@ class GenericSteadyDist(torch.autograd.Function):
         # integrate all gradients, coefficients and factors
         grad_to_X = cls._integrate(grad_from_prev, fact_S, coeff_S)
         grad_to_X = grad_to_X.view(k, k)
+
+        # zero out nan gradient
         grad_to_X[grad_to_X != grad_to_X] = 0
         return grad_to_X, None, None, None, None, None
 
@@ -565,12 +567,15 @@ class OptimSteadyDist(GenericSteadyDist):
 
         # integrate all gradients, coefficients and factors
         grad_to_X = cls._integrate(grad_from_prev, fact_S, coeff_S)
-        grad_to_X[grad_to_X != grad_to_X] = 0
 
         # put gradients to corresponding position
         mx_grad_to_X = torch.zeros(k, k, dtype=grad_to_X.dtype, device=grad_to_X.device)
         for (i, j), val in zip(pos, grad_to_X):
             mx_grad_to_X[i, j] = val
+        grad_to_X = mx_grad_to_X
+
+        # zero out nan gradient
+        grad_to_X[grad_to_X != grad_to_X] = 0
         return mx_grad_to_X, None, None, None, None, None
 
     @staticmethod

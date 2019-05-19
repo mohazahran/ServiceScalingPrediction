@@ -23,7 +23,7 @@ magic_lst = [
 ]
 
 # constant settings
-case = 'mmmmr'
+case = 'cio'
 ctype = 'cond'
 num_epochs = 300
 alpha_str = sys.argv[1]
@@ -46,7 +46,7 @@ for num in num_lst:
         if alpha < 0:
             model = module.QueueModule(train_data, **magic)
         else:
-            model = module.MMmKModule(train_data, **magic)
+            model = module.CIOModule(train_data, **magic)
         name = "{}_{}_{}_{}_{}".format(case, num, ctype, magic['trick'], alpha_str)
         task = module.Task(train_data, test_data, model, ctype=ctype, alpha=alpha, seed=seed)
         task.fit_from_rand(num_epochs, root=root, name=name)

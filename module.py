@@ -64,12 +64,25 @@ class QueueModule(torch.nn.Module):
             Focusing steady state distribution.
 
         """
+        # ensure valid parameters
+        self.zero_nan(self.X)
+
         # generate matrix
         X = self.prior.update_input_prior(self.X, lambd)
         return F.stdy_dist(self.method, X, ind, **self.kargs)
 
+    def zero_biz(self, *args):
+        r"""Force all bizarre values in the argument to be zero"""
+        # traverse argument
+        for mx in args:
+            # ensure non-NaN
+            mx.data[mx != mx] = 0
+            
+            # ensure non-negative
+            mx.data[mx < 0] = 0
 
-class MMmKModule(torch.nn.Module):
+
+class MMmKModule(QueueModule):
     r"""M/M/m/K Queue Module"""
     def __init__(self, prior, method, **kargs):
         r"""Initialize the class
@@ -116,13 +129,16 @@ class MMmKModule(torch.nn.Module):
             Focusing steady state distribution.
 
         """
+        # ensure valid parameters
+        self.zero_biz(self.E, *self.mxargs)
+
         # generate matrix
         self.E = self.prior.zero_prior(self.E)
         X = self.prior.mx(self.E, lambd, *self.mxargs)
         return F.stdy_dist(self.method, X, ind, **self.kargs)
 
 
-class LBWBModule(torch.nn.Module):
+class LBWBModule(QueueModule):
     r"""Leaky Bucket Web Browsing Queue Module"""
     def __init__(self, prior, method, **kargs):
         r"""Initialize the class
@@ -171,13 +187,16 @@ class LBWBModule(torch.nn.Module):
             Focusing steady state distribution.
 
         """
+        # ensure valid parameters
+        self.zero_biz(self.E, *self.mxargs)
+
         # generate matrix
         self.E = self.prior.zero_prior(self.E)
         X = self.prior.mx(self.E, lambd, *self.mxargs)
         return F.stdy_dist(self.method, X, ind, **self.kargs)
 
 
-class CIOModule(MMmKModule):
+class CIOModule(QueueModule):
     r"""Circular Input/Output Queue Module"""
     def __init__(self, prior, method, **kargs):
         r"""Initialize the class
@@ -224,6 +243,9 @@ class CIOModule(MMmKModule):
             Focusing steady state distribution.
 
         """
+        # ensure valid parameters
+        self.zero_biz(self.E, *self.mxargs)
+
         # generate matrix
         self.E = self.prior.zero_prior(self.E)
         X = self.prior.mx(self.E, lambd, *self.mxargs)
@@ -407,8 +429,17 @@ class Task(object):
             Name prefix for saving files.
 
         """
+        # output configuration
+        print('\033[31;1m', end='')
+        print(self.train_data.__class__.__name__)
+        print(self.layers.__class__.__name__)
+        print(self.ctype)
+        print(self.ptype)
+        print(self.alpha)
+        print('\033[0m', end='')
+
         # set formatter
-        fmt = "[{0:d}]\tTrain: {1:.6f}\tTest: {2:.6f}"
+        fmt = "[{0:d}]\tTrain: {1:.6f}\tTest: {2:.6f}\tParams: {3}"
 
         # get ideal result
         self.ideal_loss_tr = self.eval_train(ideal=True)
@@ -417,9 +448,13 @@ class Task(object):
         # initialize buffer
         loss_tr = self.eval_train()
         loss_te = self.eval_test()
+        param_rec = copy.deepcopy(self.layers.state_dict())
+        del param_rec['E']
+        param_rec = {key: val.data.item() for key, val in param_rec.items()}
+        print(fmt.format(0, loss_tr, loss_te, param_rec))
         self.loss_lst_tr, self.loss_lst_te = [loss_tr], [loss_te]
-        self.time_lst = []
-        print(fmt.format(0, loss_tr, loss_te))
+        self.param_lst = [param_rec]
+        self.time_lst = [0]
 
         # fit parameters
         self.best_loss, self.best_params = None, None
@@ -436,13 +471,17 @@ class Task(object):
                 # evaluate
                 loss_tr = self.eval_train()
                 loss_te = self.eval_test()
-                print(fmt.format(epc, loss_tr, loss_te))
+                param_rec = copy.deepcopy(self.layers.state_dict())
+                del param_rec['E']
+                param_rec = {key: val.data.item() for key, val in param_rec.items()}
+                print(fmt.format(epc, loss_tr, loss_te, param_rec))
                 if np.isnan(loss_tr) or np.isnan(loss_te):
                     print('force to stop by nan')
                     break
                 else:
                     self.loss_lst_tr.append(loss_tr)
                     self.loss_lst_te.append(loss_te)
+                    self.param_lst.append(param_rec)
                     self.time_lst.append(time_cost)
 
                 # update best parameters
