@@ -43,10 +43,10 @@ class QueueModule(torch.nn.Module):
         self.k = self.prior.k
 
         # explicitly allocate parameters
-        self.X = torch.nn.Parameter(torch.Tensor(self.k, self.k))
+        self.E = torch.nn.Parameter(torch.Tensor(self.k, self.k))
 
         # explicitly initialize parameters
-        self.X.data.fill_(0)
+        self.E.data.fill_(0)
 
     def forward(self, lambd, ind=None):
         r"""Forwarding
@@ -65,10 +65,10 @@ class QueueModule(torch.nn.Module):
 
         """
         # ensure valid parameters
-        self.zero_biz(self.X)
+        self.zero_biz(self.E)
 
         # generate matrix
-        X = self.prior.update_input_prior(self.X, lambd)
+        X = self.prior.update_input_prior(self.E, lambd)
         return F.stdy_dist(self.method, X, ind, **self.kargs)
 
     def zero_biz(self, *args):
