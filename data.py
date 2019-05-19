@@ -683,11 +683,13 @@ Function
 """
 
 
-def mm1k(num):
+def mm1k(rng, num):
     r"""Generate M/M/1/K test case
 
     Args
     ----
+    rng : str
+        Range specifier.
     num : int
         Number of training samples.
 
@@ -706,21 +708,29 @@ def mm1k(num):
 
     # set random seed
     seed = 47
+    if rng == 's':
+        mn, mx = 20, 30
+    elif rng == 'l':
+        mn, mx = 1, 50
+    else:
+        pass
 
     # set sharing configuration
     data_kargs = dict(k=20, m=1, const_mu=25, epsilon=1e-4, ind=[0, 1], focus=-1)
 
     # generate data
-    train_data = DataMMmK(n=num, lamin=20, lamax=30, seed=seed - 1, **data_kargs)
+    train_data = DataMMmK(n=num, lamin=mn, lamax=mx, seed=seed - 1, **data_kargs)
     test_data  = DataMMmK(n=50 , lamin=1 , lamax=50, seed=seed + 1, **data_kargs)
     return seed, train_data, test_data
 
 
-def mmmmr(num):
+def mmmmr(rng, num):
     r"""Generate M/M/m/m+r test case
 
     Args
     ----
+    rng : str
+        Range specifier.
     num : int
         Number of training samples.
 
@@ -739,21 +749,29 @@ def mmmmr(num):
 
     # set random seed
     seed = 47
+    if rng == 's':
+        mn, mx = 20, 30
+    elif rng == 'l':
+        mn, mx = 1, 50
+    else:
+        pass
 
     # set sharing configuration
     data_kargs = dict(k=20, m=1, const_mu=25, epsilon=1e-4, ind=[0, 1], focus=-1)
 
     # generate data
-    train_data = DataMMmK(n=num, lamin=1 , lamax=50, seed=seed - 1, **data_kargs)
+    train_data = DataMMmK(n=num, lamin=mn, lamax=mx, seed=seed - 1, **data_kargs)
     test_data  = DataMMmK(n=50 , lamin=1 , lamax=50, seed=seed + 1, **data_kargs)
     return seed, train_data, test_data
 
 
-def lbwb(num):
+def lbwb(rng, num):
     r"""Generate Leaky Bucket Web Browsing test case
 
     Args
     ----
+    rng : str
+        Range specifier.
     num : int
         Number of training samples.
 
@@ -772,6 +790,12 @@ def lbwb(num):
 
     # set random seed
     seed = 47
+    if rng == 's':
+        mn, mx = 20, 30
+    elif rng == 'l':
+        mn, mx = 1, 50
+    else:
+        pass
 
     # set sharing configuration
     data_kargs = dict(
@@ -779,16 +803,18 @@ def lbwb(num):
         ind=[(0, 0), (0, 1), (1, 0), (1, 1)], focus=(3, 2))
 
     # generate data
-    train_data = DataLBWB(n=num, lamin=1 , lamax=50, seed=seed - 1, **data_kargs)
+    train_data = DataLBWB(n=num, lamin=mn, lamax=mx, seed=seed - 1, **data_kargs)
     test_data  = DataLBWB(n=50 , lamin=1 , lamax=50, seed=seed + 1, **data_kargs)
     return seed, train_data, test_data
 
 
-def cio(num):
+def cio(rng, num):
     r"""Generate Circular Input/Output test case
 
     Args
     ----
+    rng : str
+        Range specifier.
     num : int
         Number of training samples.
 
@@ -807,6 +833,12 @@ def cio(num):
 
     # set random seed
     seed = 47
+    if rng == 's':
+        mn, mx = 20, 30
+    elif rng == 'l':
+        mn, mx = 1, 50
+    else:
+        pass
 
     # set sharing configuration
     s, a1, a2, b = 6, 4, 4, 2
@@ -816,6 +848,6 @@ def cio(num):
         ind=ind, focus=(2, 2, 2))
 
     # generate data
-    train_data = DataCIO(n=num, lamin=1 , lamax=50, seed=seed - 1, **data_kargs)
+    train_data = DataCIO(n=num, lamin=mn, lamax=mx, seed=seed - 1, **data_kargs)
     test_data  = DataCIO(n=50 , lamin=1 , lamax=50, seed=seed + 1, **data_kargs)
     return seed, train_data, test_data

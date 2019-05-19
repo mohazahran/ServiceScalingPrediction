@@ -4,6 +4,10 @@ import data
 import module
 
 # number of training samples
+rng_lst = [
+    'l',
+    's',
+]
 num_lst = [
     200,
     100,
@@ -25,7 +29,7 @@ magic_lst = [
 # constant settings
 case = 'cio'
 ctype = 'resi'
-num_epochs = 300
+num_epochs = 1
 alpha_str = sys.argv[1]
 
 # create saving folder
@@ -36,17 +40,18 @@ else:
     os.makedirs(root)
 
 # traverse number of training samples
-for num in num_lst:
-    # generate data
-    seed, train_data, test_data = getattr(data, case)(num)
-
-    # traverse numerical method
-    for magic in magic_lst:
-        alpha = float(alpha_str)
-        if alpha < 0:
-            model = module.QueueModule(train_data, **magic)
-        else:
-            model = module.CIOModule(train_data, **magic)
-        name = "{}_{}_{}_{}_{}".format(case, num, ctype, magic['trick'], alpha_str)
-        task = module.Task(train_data, test_data, model, ctype=ctype, alpha=alpha, seed=seed)
-        task.fit_from_rand(num_epochs, root=root, name=name)
+for rng in rng_lst:
+    for num in num_lst:
+        # generate data
+        seed, train_data, test_data = getattr(data, case)(rng, num)
+    
+        # traverse numerical method
+        for magic in magic_lst:
+            alpha = float(alpha_str)
+            if alpha < 0:
+                model = module.QueueModule(train_data, **magic)
+            else:
+                model = module.CIOModule(train_data, **magic)
+            name = "{}_{}_{}_{}_{}_{}".format(case, rng, num, ctype, magic['trick'], alpha_str)
+            task = module.Task(train_data, test_data, model, ctype=ctype, alpha=alpha, seed=seed)
+            task.fit_from_rand(num_epochs, root=root, name=name)
