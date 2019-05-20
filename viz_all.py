@@ -10,6 +10,7 @@ CASE_TITLES = {
     'mmmmr': 'M/M/m/m+r',
     'lbwb' : 'Leaky Bucket',
     'cio'  : 'Circular I/O',
+    'real' : 'Real Collection',
 }
 
 RNG_TITLES = {
@@ -127,8 +128,12 @@ def add_glyph(ax, data, case, rng, loss, num, magic, alpha, label, maxlen=None, 
 
     """
     # construct path
-    rootname = "{}_{}_{}_{}_{}".format(case, 'all', loss, 'all', alpha)
-    filename = "{}_{}_{}_{}_{}_{}.pt".format(case, rng, num, loss, magic, alpha)
+    if case == 'real':
+        rootname = "{}_{}".format(case, loss)
+        filename = "{}_{}_{}_{}.pt".format(case, rng, loss, magic)
+    else:
+        rootname = "{}_{}_{}_{}_{}".format(case, 'all', loss, 'all', alpha)
+        filename = "{}_{}_{}_{}_{}_{}.pt".format(case, rng, num, loss, magic, alpha)
     path = os.path.join(rootname, filename)
 
     # load data
@@ -290,3 +295,6 @@ if __name__ == '__main__':
         viz('te', **cfg, alpha_lst=['0.01', '0.1', '1', '10', '100'])
 
         viz('tr', **cfg, alpha_lst=['0.01', '0.1', '1', '10', '100'])
+
+    viz('te', 'real', 'l', 'cond', [None], [None], [None], magic_lst=['rrinf', '7', '4', 'rr', 'inf'])
+    viz('te', 'real', 's', 'cond', [None], [None], [None], magic_lst=['rrinf', '7', '4', 'rr', 'inf'])

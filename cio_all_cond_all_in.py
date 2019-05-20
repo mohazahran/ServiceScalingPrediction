@@ -29,7 +29,7 @@ magic_lst = [
 # constant settings
 case = 'cio'
 ctype = 'cond'
-num_epochs = 1
+num_epochs = 300
 alpha_str = sys.argv[1]
 
 # create saving folder

@@ -716,6 +716,12 @@ class DataReal(DataMMmK):
         # read raw data
         raw_data = pd.read_csv(path)
         raw_data = raw_data[(lamin <= raw_data['callrate']) & (raw_data['callrate'] <= lamax)]
+        for itr in raw_data.keys():
+            if '=' in itr:
+                ch = itr[0]
+                break
+            else:
+                pass
 
         # allocate data buffer
         self.samples = []
@@ -724,14 +730,14 @@ class DataReal(DataMMmK):
         for _, row in raw_data.iterrows():
             # parse data row
             lambd = row['callrate']
-            obvs = [row["Q={}".format(nwait)] for nwait in ind]
+            obvs = [row["{}={}".format(ch, nwait)] for nwait in ind]
             obvs.append(lambd - sum(obvs))
 
             # parse dropping states
             drop_lst = []
             cnt = qsz + 1
             while True:
-                key = "Q={}".format(cnt)
+                key = "{}={}".format(ch, cnt)
                 if key in row:
                     drop_lst.append(row[key])
                 else:
@@ -757,7 +763,8 @@ Function
 - **mmmmr** : Generate M/M/m/m+r test case
 - **lbwb**  : Generate Leaky Bucket Web Browsing test case
 - **cio**   : Generate Circular Input/Output test case
-- **real**  : Load Real Collection test case
+- **real**  : Load Real Collection of Actual Queue Size test case
+- **rtt**   : Load Real Collection of RTT deduced Queue Size test case
 """
 
 
@@ -931,8 +938,8 @@ def cio(rng, num):
     return seed, train_data, test_data
 
 
-def real(rng):
-    r"""Load Real Collection test case
+def actual(rng):
+    r"""Load Real Collection of Actual Queue Size test case
 
     Args
     ----
@@ -963,7 +970,46 @@ def real(rng):
 
     # set sharing configuration
     fname = 'ACTUAL_Q_LEN_test_sample_110.csv'
-    data_kargs = dict(qsz=20, ind=[1, 2, 3], focus=-1)
+    data_kargs = dict(qsz=20, ind=[1, 2], focus=-1)
+
+    # generate data
+    train_data = DataReal(path=fname, lamin=mn  , lamax=mx  , seed=seed - 1, **data_kargs)
+    test_data  = DataReal(path=fname, lamin=1001, lamax=9999, seed=seed + 1, **data_kargs)
+    return seed, train_data, test_data
+
+def rtt(rng):
+    r"""Load Real Collection of RTT Deduced Queue Size test case
+
+    Args
+    ----
+    rng : str
+        Range specifier.
+
+    Returns
+    -------
+    seed : int
+        Random seed to use.
+    train_data : object
+        Training data.
+    test_data : object
+        Test data.
+
+    """
+    # global settings decided by data
+    np.set_printoptions(precision=8, suppress=True)
+
+    # set random seed
+    seed = 47
+    if rng == 's':
+        mn, mx = 1   , 1000
+    elif rng == 'l':
+        mn, mx = 1001, 9999
+    else:
+        pass
+
+    # set sharing configuration
+    fname = 'RTT_ESIMATE_Q_LEN_test_sample_110.csv'
+    data_kargs = dict(qsz=20, ind=[1, 2], focus=-1)
 
     # generate data
     train_data = DataReal(path=fname, lamin=mn  , lamax=mx  , seed=seed - 1, **data_kargs)
