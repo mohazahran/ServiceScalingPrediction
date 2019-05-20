@@ -5,7 +5,7 @@ import module
 
 # number of training samples
 rng_lst = [
-    'l',
+    # // 'l',
     's',
 ]
 num_lst = [
