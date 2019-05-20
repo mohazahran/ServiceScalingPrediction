@@ -268,8 +268,8 @@ def viz(data, case, rng, loss, num, magic, alpha, num_lst=None, magic_lst=None, 
 
     # save visualization
     root = 'rsfigs'
-    fig.savefig(os.path.join(root, "{}.pdf".format(filename)), format='pdf')
-    fig.savefig(os.path.join(root, "{}.png".format(filename)), format='png')
+    fig.savefig(os.path.join(root, 'pdf', "{}.pdf".format(filename)), format='pdf')
+    fig.savefig(os.path.join(root, 'png', "{}.png".format(filename)), format='png')
     plt.close(fig)
 
 # run all visulization

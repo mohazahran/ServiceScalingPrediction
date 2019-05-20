@@ -14,6 +14,7 @@ Module
 - **MMmKModule**         : M/M/m/K Queue module
 - **LBWBModule**         : Leaky Bucket Web Browsing Queue module
 - **CIOModule**          : Circular Input/Output Queue module
+- **RealModule**         : Real Collection module
 - **CondDistLossModule** : Conditional steady state distribution loss module
 - **ResiDistLossModule** : Residual steady state distribution loss module
 - **MSEDistLossModule**  : MSE steady state distribution loss module
@@ -252,6 +253,76 @@ class CIOModule(QueueModule):
         return F.stdy_dist(self.method, X, ind, **self.kargs)
 
 
+# // class RealModule(torch.nn.Module):
+# //     r"""Queue Module without Priori"""
+# //     def __init__(self, k, method, trick):
+# //         r"""Initialize the class
+# // 
+# //         Args
+# //         ----
+# //         k : int
+# //             Number of states.
+# //         method : str
+# //             Method to use.
+# //         trick : str
+# //             Trick to use.
+# // 
+# //         """
+# //         # super calling
+# //         torch.nn.Module.__init__(self)
+# // 
+# //         # save necessary attributes
+# //         self.k = k
+# //         self.method = method
+# //         self.trick = trick
+# // 
+# //         # explicitly allocate parameters
+# //         self.mu = torch.nn.Parameter(torch.Tensor(1))
+# //         self.E = torch.nn.Parameter(torch.Tensor(self.k, self.k))
+# // 
+# //         # explicitly initialize parameters
+# //         self.mu.data.fill_(1)
+# //         self.E.data.fill_(0)
+# // 
+# //         # construct specified optimization
+# //         self.pos = []
+# //         self.bmx = torch.Tensor(self.k, self.k)
+# //         self.dmx = torch.Tensor(self.k, self.k)
+# //         self.bmx.zero_()
+# //         self.dmx.zero_()
+# //         self.bmx.requires_grad = False
+# //         self.dmx.requires_grad = False
+# //         for i in range(self.k - 1):
+# //             self.pos.append((i + 1, i))
+# //             self.bmx.data[i, i + 1] = 1
+# //             self.bmx.data[i + 1, i] = 1
+# // 
+# //     def forward(self, lambd, ind=None):
+# //         r"""Forwarding
+# // 
+# //         Args
+# //         ----
+# //         lambd : int
+# //             Input lambda.
+# //         ind : int or [int, ...]
+# //             Focusing steady state indices.
+# // 
+# //         Returns
+# //         -------
+# //         dist : torch.Tensor
+# //             Focusing steady state distribution.
+# // 
+# //         """
+# //         # optimized forwarding
+# //         X = lambd * self.bmx + self.mu * self.dmx
+# //         if self.method == 'rrx':
+# //             return F.optim_stdy_dist_rrx(X, ind, self.pos, trick=self.trick)
+# //         elif self.method == 'pow':
+# //             return F.stdy_dist('pow', X, ind, self.pos, trick=self.trick)
+# //         else:
+# //             raise NotImplementedError
+
+
 class CondDistLossModule(torch.nn.Module):
     r"""Conditional Steady State Distribution Loss Module"""
     def forward(self, ind, output, pi, obvs):
@@ -379,7 +450,7 @@ class Task(object):
     # constants
     CTRL_CLS = dict(cond=CondDistLossModule, resi=ResiDistLossModule, mse=MSEDistLossModule)
 
-    def __init__(self, train_data, test_data, layers, ctype, alpha, seed):
+    def __init__(self, train_data, test_data, layers, ctype, alpha, seed, lr=None):
         r"""Initialize the class
 
         Args
@@ -406,7 +477,7 @@ class Task(object):
         # save necessary attributes
         self.ctype = ctype
         self.ptype = 'single'
-        self.lr = 0.01
+        self.lr = lr or 0.01
         self.alpha = alpha
 
         # allocate necessary attributes

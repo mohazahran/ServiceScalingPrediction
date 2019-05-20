@@ -826,9 +826,9 @@ def optim_stdy_dist_rrx(X, ind=None, pos=None, c=0.001, vmin=1e-20, vmax=1, geo_
 
     # adjust Russian Roulette trick
     global RR_T
-    OptimSteadyDist.GEO_P = geo_p
-    OptimSteadyDist.RR    = TRICK_DICT[trick]
-    RR_T                  = 10
+    GenericSteadyDist.GEO_P = geo_p
+    GenericSteadyDist.RR    = TRICK_DICT[trick]
+    RR_T                    = 10
 
     # call autograd function class
     return OptimSteadyDist.apply(X, ind, pos, c, vmin, vmax, *args, **kargs)

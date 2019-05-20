@@ -1,5 +1,6 @@
 import numpy as np
 import scipy.stats as stats
+import pandas as pd
 import torch
 import function as F
 
@@ -11,6 +12,7 @@ Data
 - **MMmKData**  : M/M/m/K Queue Data
 - **LBWBData**  : Leaky Bucket Web Browsing Queue Data
 - **CIOData**   : Circular Input/Output Queue Data
+- **RealData**  : Real Collection Data
 """
 
 
@@ -21,6 +23,10 @@ class QueueData(object):
 
         Args
         ----
+        lamin : int
+            Minimum (inclusive) of sampled lambda.
+        lamax : int
+            Maximum (inclusive) of sampled lambda.
         n : int
             Number of samples.
         epsilon : int
@@ -29,10 +35,6 @@ class QueueData(object):
             Focusing state indices.
         focus : int
             Ultimate focusing state index for test.
-        lamin : int
-            Minimum (inclusive) of sampled lambda.
-        lamax : int
-            Maximum (inclusive) of sampled lambda.
         seed : int
             Random seed.
 
@@ -673,6 +675,81 @@ class DataCIO(QueueData):
         return {'mu': self.mxargs[0]}
 
 
+class DataReal(DataMMmK):
+    r"""Real collection Data"""
+    def __init__(self, lamin, lamax, path, qsz, ind, focus, seed):
+        r"""Initialize the class
+
+        Args
+        ----
+        lamin : int
+            Minimum (inclusive) of lambda to load.
+        lamax : int
+            Maximum (inclusive) of lambda to load.
+        path : str
+            Path to load data files.
+        qsz : int
+            Queue size.
+        ind : [int, ...]
+            Focusing state indices.
+        focus : int
+            Ultimate focusing state index for test.
+        seed : int
+            Random seed.
+
+        """
+        # configure random seed
+        np.random.seed(seed)
+        torch.manual_seed(seed)
+        torch.cuda.manual_seed(seed)
+
+        # save necessary attributes
+        self.k = qsz + 2
+        self.m = 1
+        self.ind = ind
+        self.focus = focus
+        self.mxargs = ('nan',)
+
+        # generate sharing matrix
+        self.gen_share()
+
+        # read raw data
+        raw_data = pd.read_csv(path)
+        raw_data = raw_data[(lamin <= raw_data['callrate']) & (raw_data['callrate'] <= lamax)]
+
+        # allocate data buffer
+        self.samples = []
+
+        # sample observations for all lambda candidates
+        for _, row in raw_data.iterrows():
+            # parse data row
+            lambd = row['callrate']
+            obvs = [row["Q={}".format(nwait)] for nwait in ind]
+            obvs.append(lambd - sum(obvs))
+
+            # parse dropping states
+            drop_lst = []
+            cnt = qsz + 1
+            while True:
+                key = "Q={}".format(cnt)
+                if key in row:
+                    drop_lst.append(row[key])
+                else:
+                    break
+                cnt += 1
+            num_drops = sum(drop_lst)
+
+            # generate pi as a list
+            pi = [float('nan') for i in range(self.k)]
+            for i, nwait in enumerate(ind):
+                pi[nwait] = float(obvs[i]) / lambd
+            pi[-1] = float(num_drops) / lambd
+            pi = torch.Tensor(pi)
+
+            # append parsed data
+            self.samples.append((torch.Tensor([lambd]), pi, torch.Tensor(obvs)))
+
+
 r"""
 Function
 ========
@@ -680,6 +757,7 @@ Function
 - **mmmmr** : Generate M/M/m/m+r test case
 - **lbwb**  : Generate Leaky Bucket Web Browsing test case
 - **cio**   : Generate Circular Input/Output test case
+- **real**  : Load Real Collection test case
 """
 
 
@@ -850,4 +928,44 @@ def cio(rng, num):
     # generate data
     train_data = DataCIO(n=num, lamin=mn, lamax=mx, seed=seed - 1, **data_kargs)
     test_data  = DataCIO(n=50 , lamin=1 , lamax=50, seed=seed + 1, **data_kargs)
+    return seed, train_data, test_data
+
+
+def real(rng):
+    r"""Load Real Collection test case
+
+    Args
+    ----
+    rng : str
+        Range specifier.
+
+    Returns
+    -------
+    seed : int
+        Random seed to use.
+    train_data : object
+        Training data.
+    test_data : object
+        Test data.
+
+    """
+    # global settings decided by data
+    np.set_printoptions(precision=8, suppress=True)
+
+    # set random seed
+    seed = 47
+    if rng == 's':
+        mn, mx = 1   , 1000
+    elif rng == 'l':
+        mn, mx = 1001, 9999
+    else:
+        pass
+
+    # set sharing configuration
+    fname = 'ACTUAL_Q_LEN_test_sample_110.csv'
+    data_kargs = dict(qsz=20, ind=[1, 2, 3], focus=-1)
+
+    # generate data
+    train_data = DataReal(path=fname, lamin=mn  , lamax=mx  , seed=seed - 1, **data_kargs)
+    test_data  = DataReal(path=fname, lamin=1001, lamax=9999, seed=seed + 1, **data_kargs)
     return seed, train_data, test_data
