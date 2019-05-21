@@ -68,6 +68,11 @@ class QueueModule(torch.nn.Module):
         # ensure valid parameters
         self.zero_biz(self.E)
 
+        # clean upper triangular
+        for i in range(self.E.size(0)):
+            for j in range(i + 1, self.E.size(1)):
+                self.E.data[i, j] = 0
+
         # generate matrix
         X = self.prior.update_input_prior(self.E, lambd)
         return F.stdy_dist(self.method, X, ind, **self.kargs)

@@ -6,11 +6,12 @@ import itertools
 
 # constants
 CASE_TITLES = {
-    'mm1k' : 'M/M/1/K',
-    'mmmmr': 'M/M/m/m+r',
-    'lbwb' : 'Leaky Bucket',
-    'cio'  : 'Circular I/O',
-    'real' : 'Real Collection',
+    'mm1k'  : 'M/M/1/K',
+    'mmmmr' : 'M/M/m/m+r',
+    'lbwb'  : 'Leaky Bucket',
+    'cio'   : 'Circular I/O',
+    'actual': 'Actual Collection',
+    'rtt'   : 'RTT Deduced Collection',
 }
 
 RNG_TITLES = {
@@ -32,13 +33,13 @@ MAGIC_TITLES = {
 }
 
 STYLES = [
-    {},
-    {},
-    {},
-    {},
-    {},
-    {},
-    {},
+    {'color': 'green' },
+    {'color': 'red'   },
+    {'color': 'blue'  },
+    {'color': 'orange'},
+    {'color': 'purple'},
+    {'color': 'gray'  },
+    {'color': 'brown' },
 ]
 
 def null_fix(data):
@@ -128,9 +129,9 @@ def add_glyph(ax, data, case, rng, loss, num, magic, alpha, label, maxlen=None, 
 
     """
     # construct path
-    if case == 'real':
+    if case in ('actual', 'rtt'):
         rootname = "{}_{}".format(case, loss)
-        filename = "{}_{}_{}_{}.pt".format(case, rng, loss, magic)
+        filename = "{}_{}_{}_{}_{}.pt".format(case, rng, loss, magic, alpha)
     else:
         rootname = "{}_{}_{}_{}_{}".format(case, 'all', loss, 'all', alpha)
         filename = "{}_{}_{}_{}_{}_{}.pt".format(case, rng, num, loss, magic, alpha)
@@ -164,28 +165,29 @@ def best(case, rng, loss):
         Studying loss function.
 
     """
-    # search for best configuration
-    num_lst = [5, 10, 25, 50, 100, 200]
-    ctype = loss
-    magic_lst = ['rrinf', '7', '4', 'rr', 'inf', ]
-    alpha_str_lst = ['-1', '0', '0.01', '0.1', '1', '10', '100']
-    best_point, best_cfg = None, None
-    for num in num_lst:
-        for magic in magic_lst:
-            for alpha_str in alpha_str_lst:
-                rootname = "{}_{}_{}_{}_{}".format(case, 'all', ctype, 'all', alpha_str)
-                filename = "{}_{}_{}_{}_{}_{}.pt".format(case, rng, num, ctype, magic, alpha_str)
-                path = os.path.join(rootname, filename)
-                data = _fix(torch.load(path))
-                ydata = data['loss_lst_te']
-                point = min(ydata)
-                if best_point is None or point < best_point:
-                    best_point = point
-                    best_cfg = (num, magic, alpha_str)
-                else:
-                    pass
+    # // # search for best configuration
+    # // num_lst = [5, 10, 25, 50, 100, 200]
+    # // ctype = loss
+    # // magic_lst = ['rrinf', '7', '4', 'rr', 'inf', ]
+    # // alpha_str_lst = ['-1', '0', '0.01', '0.1', '1', '10', '100']
+    # // best_point, best_cfg = None, None
+    # // for num in num_lst:
+    # //     for magic in magic_lst:
+    # //         for alpha_str in alpha_str_lst:
+    # //             rootname = "{}_{}_{}_{}_{}".format(case, 'all', ctype, 'all', alpha_str)
+    # //             filename = "{}_{}_{}_{}_{}_{}.pt".format(case, rng, num, ctype, magic, alpha_str)
+    # //             path = os.path.join(rootname, filename)
+    # //             data = _fix(torch.load(path))
+    # //             ydata = data['loss_lst_te']
+    # //             point = min(ydata)
+    # //             if best_point is None or point < best_point:
+    # //                 best_point = point
+    # //                 best_cfg = (num, magic, alpha_str)
+    # //             else:
+    # //                 pass
 
     # force to use constant configuration
+    best_point = float('nan')
     best_cfg = (200, 'rrinf', '100')
 
     # export best configuration
@@ -201,13 +203,14 @@ def best(case, rng, loss):
         case=case, rng=rng, loss=loss, num=[best_cfg[0]], magic=[best_cfg[1]],
         alpha=[best_cfg[2]])
 
-def viz(data, case, rng, loss, num, magic, alpha, num_lst=None, magic_lst=None, alpha_lst=None):
+def viz(data, case, rng, loss, num, magic, alpha, num_lst=None, magic_lst=None, alpha_lst=None,
+        maxlen=None):
     r"""Comparison on given configuration"""
     # determine title
     if num_lst is not None:
         prefix = '#Training Observations'
         suffix = 'num'
-        label_lst = num_lst
+        label_lst = num_lst.copy()
     elif magic_lst is not None:
         prefix = 'Numerical Method'
         suffix = 'magic'
@@ -222,7 +225,12 @@ def viz(data, case, rng, loss, num, magic, alpha, num_lst=None, magic_lst=None, 
     elif alpha_lst is not None:
         prefix = 'Prior Regularization Strength'
         suffix = 'alpha'
-        label_lst = alpha_lst
+        label_lst = alpha_lst.copy()
+        for i in range(len(label_lst)):
+            if label_lst[i] == '-1':
+                label_lst[i] = 'No Prior'
+            else:
+                pass
     else:
         raise RuntimeError()
     title = "{prefix} Comparison on {loss} {case} {rng}".format(
@@ -232,12 +240,10 @@ def viz(data, case, rng, loss, num, magic, alpha, num_lst=None, magic_lst=None, 
 
     # font
     font = dict(fontsize=18)
-
-    # maximum length
-    maxlen = None
+    leg_font = dict(fontsize=15)
 
     # allocate canvas
-    fig, ax = plt.subplots(1, 1, figsize=(10, 8))
+    fig, ax = plt.subplots(1, 1, figsize=(10, 6))
     ax.set_xlabel('#Epochs', **font)
     if data == 'te':
         ax.set_ylabel('MSE Loss on Test-Focusing State', **font)
@@ -269,7 +275,7 @@ def viz(data, case, rng, loss, num, magic, alpha, num_lst=None, magic_lst=None, 
         vsup = vmax if vsup is None else max(vmax, vsup)
     offset = (vsup - vinf) * 0.05
     ax.set_ylim(vinf - offset, vsup + offset)
-    ax.legend(loc='upper center', bbox_to_anchor=(0.5, 1.15), ncol=6, fancybox=True, **font)
+    ax.legend(loc='upper center', bbox_to_anchor=(0.5, 1.15), ncol=6, fancybox=True, **leg_font)
 
     # save visualization
     root = 'rsfigs'
@@ -283,6 +289,12 @@ if __name__ == '__main__':
 
     cfgs = [
         best('mm1k' , 's', 'cond'),
+        best('mmmmr', 's', 'cond'),
+        best('lbwb' , 's', 'cond'),
+        best('cio'  , 's', 'cond'),
+        best('lbwb' , 's', 'resi'),
+        best('cio'  , 's', 'resi'),
+        best('mm1k' , 'l', 'cond'),
         best('mmmmr', 'l', 'cond'),
         best('lbwb' , 'l', 'cond'),
         best('cio'  , 'l', 'cond'),
@@ -296,5 +308,10 @@ if __name__ == '__main__':
 
         viz('tr', **cfg, alpha_lst=['0.01', '0.1', '1', '10', '100'])
 
-    viz('te', 'real', 'l', 'cond', [None], [None], [None], magic_lst=['rrinf', '7', '4', 'rr', 'inf'])
-    viz('te', 'real', 's', 'cond', [None], [None], [None], magic_lst=['rrinf', '7', '4', 'rr', 'inf'])
+    viz('te', 'actual', 'l', 'cond', [None], [None], ['100'], magic_lst=['rrinf', '7', '4', 'rr', 'inf'])
+    viz('te', 'actual', 's', 'cond', [None], [None], ['100'], magic_lst=['rrinf', '7', '4', 'rr', 'inf'])
+    viz('te', 'rtt', 'l', 'cond', [None], [None], ['100'], magic_lst=['rrinf', '7', '4', 'rr', 'inf'])
+    viz('te', 'rtt', 's', 'cond', [None], [None], ['100'], magic_lst=['rrinf', '7', '4', 'rr', 'inf'])
+
+    viz('te', 'rtt', 's', 'cond', [None], ['rrinf'], [None], alpha_lst=['-1', '0.01', '100'])
+    viz('tr', 'rtt', 's', 'cond', [None], ['rrinf'], [None], alpha_lst=['-1', '0.01', '100'])
