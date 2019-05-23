@@ -4,7 +4,7 @@ Usage
 ## Modules
 - `function.py`: DC-BPTT and $\infty$-SGD implementation as callable functions.
   ```python
-import function as F
+  import function as F
   import torch
   import numpy as np
   
