@@ -6,15 +6,15 @@ import module
 # number of training samples
 rng_lst = [
     'l',
-    's',
+    # // 's',
 ]
 num_lst = [
     200,
-    100,
-    50,
-    25,
-    10,
-    5,
+    # // 100,
+    # // 50,
+    # // 25,
+    # // 10,
+    # // 5,
 ]
 
 # numerical method list
@@ -22,8 +22,8 @@ magic_lst = [
     {'method': 'rrx', 'trick': 'rrinf'},
     {'method': 'pow', 'trick': '7'    },
     {'method': 'pow', 'trick': '4'    },
-    {'method': 'rrx', 'trick': 'inf'  },
-    {'method': 'rrx', 'trick': 'rr'   },
+    # // {'method': 'rrx', 'trick': 'inf'  },
+    # // {'method': 'rrx', 'trick': 'rr'   },
 ]
 
 # constant settings

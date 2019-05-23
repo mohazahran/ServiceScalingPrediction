@@ -133,13 +133,12 @@ def _inf_split(P, Pinf, M, dist, *args, **kargs):
 
     # compute expectation with infinity split
     I = torch.eye(k, dtype=P.dtype, device=P.device)
-    try:
-        inv = torch.inverse(I - P)
-    except:
-        inv = torch.zeros(k, k, dtype=P.dtype, device=P.device)
-    part1 = torch.matmul(torch.matmul(Pinf, M), inv)
-    part2 = torch.matmul(torch.matmul(inv, M), Pinf)
-    return part1 + part2
+    E = torch.zeros(k, k, dtype=P.dtype, device=P.device)
+    for i in range(RR_T + 1):
+        E = E + I
+        I = torch.matmul(P, I)
+    part1 = torch.matmul(torch.matmul(Pinf, M), E)
+    return part1
 
 
 def _russian_roulette_inf_split(P, Pinf, M, dist, *args, **kargs):

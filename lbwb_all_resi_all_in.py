@@ -22,8 +22,8 @@ magic_lst = [
     {'method': 'rrx', 'trick': 'rrinf'},
     {'method': 'pow', 'trick': '7'    },
     {'method': 'pow', 'trick': '4'    },
-    {'method': 'rrx', 'trick': 'inf'  },
-    {'method': 'rrx', 'trick': 'rr'   },
+    # // {'method': 'rrx', 'trick': 'inf'  },
+    # // {'method': 'rrx', 'trick': 'rr'   },
 ]
 
 # constant settings
